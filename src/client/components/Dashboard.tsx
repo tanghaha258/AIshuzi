@@ -66,7 +66,7 @@ export function Dashboard({ data, onCreateSession, onOpenSession, onNavigate }: 
           <span className="eyebrow">AI Digital Student Micro-Teaching</span>
           <h1>AI数字学生课堂微格实训平台</h1>
           <p>
-            面向师范生和新教师的虚拟AI学生课堂，支持备课、试讲、突发互动、即时策略提示和课后诊断。
+            面向师范生和新教师的虚拟 AI 学生课堂，支持备课、试讲、突发互动、即时策略提示和课后诊断。
           </p>
         </div>
         <div className="hero-actions">

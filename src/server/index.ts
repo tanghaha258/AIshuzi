@@ -70,14 +70,14 @@ app.post("/api/students", (req, res) => {
     id: typeof body.id === "string" ? body.id : undefined,
     name: requireString(body.name, "新学生"),
     avatar: requireString(body.avatar, "自定义"),
-    personality: requireString(body.personality, "课堂表现待观察"),
+    personality: requireString(body.personality, "课堂表现待观察。"),
     foundation: Number(body.foundation || 60),
     attention: Number(body.attention || 60),
     comprehension: Number(body.comprehension || 60),
     participation: Number(body.participation || 60),
-    behaviorStyle: requireString(body.behaviorStyle, "根据课堂情境自然回应"),
+    behaviorStyle: requireString(body.behaviorStyle, "根据课堂情境自然回应。"),
     status: requireString(body.status, "观察"),
-    strategy: requireString(body.strategy, "用明确任务引导参与")
+    strategy: requireString(body.strategy, "用明确任务引导参与。")
   });
   res.status(201).json(student);
 });

@@ -129,13 +129,13 @@ function fallbackMessage(student: StudentAgent, teacherText: string, index: numb
   const text = teacherText.toLowerCase();
   const hasQuestion = /吗|什么|为什么|怎么|如何|\?|？/.test(teacherText);
   const templates = [
-    `老师，我有点跟不上，能不能把刚才这一步再拆开说一下？`,
-    `我觉得可以先找直角边，再看斜边是不是最大的一条。`,
-    `如果题目换成生活里的楼梯或者操场距离，也能这样算吗？`,
-    `我刚刚走神了，想确认一下现在是在用 ${teacherText.slice(0, 18) || "这个知识点"} 吗？`,
-    `这个结论我能记住，但不知道什么时候该用。`
+    "老师，我有点跟不上，能不能把刚才这一步再拆开说一下？",
+    "我觉得可以先找直角边，再看斜边是不是最长的那一条。",
+    "如果题目换成生活里的楼梯或者操场距离，也能这样算吗？",
+    `我刚才走神了，想确认一下现在是在用 ${teacherText.slice(0, 18) || "这个知识点"} 吗？`,
+    "这个结论我能记住，但不知道什么时候该用。"
   ];
-  const challenge = `老师，如果条件不完整，是不是就不能直接套公式？`;
+  const challenge = "老师，如果条件不完整，是不是就不能直接套公式？";
   const content =
     student.status.includes("质疑") || student.personality.includes("挑战")
       ? challenge
@@ -145,13 +145,13 @@ function fallbackMessage(student: StudentAgent, teacherText: string, index: numb
   return {
     studentId: student.id,
     studentName: student.name,
-    content: text.length > 1 ? content : `老师，我准备好了，可以开始。`,
+    content: text.length > 1 ? content : "老师，我准备好了，可以开始。",
     mood: student.status
   };
 }
 
 function fallbackSuggestion(messages: AiStudentMessage[]) {
-  const confused = messages.filter((message) => /跟不上|不知道|确认|不能/.test(message.content));
+  const confused = messages.filter((message) => /跟不上|不知道|确认|不能|不懂/.test(message.content));
   if (confused.length > 1) {
     return "当前有多名学生出现理解阻滞，建议暂停推进，换一个生活化例子，并用一个封闭式小问题确认全班是否跟上。";
   }
@@ -192,7 +192,7 @@ export async function generateAiStudentTurn(
 
   const prompt = [
     "你是一个师范生微格教学实训平台里的课堂模拟引擎。",
-    "请基于教师发言和学生画像，生成 2-4 个AI学生的真实课堂反应，并给教师一条即时教学策略建议。",
+    "请基于教师发言和学生画像，生成 2-4 个 AI学生的真实课堂反应，并给教师一条即时教学策略建议。",
     "必须只输出 JSON，格式：",
     '{"messages":[{"studentId":"...","studentName":"...","content":"...","mood":"..."}],"suggestion":"..."}',
     `课程：${context.session.courseTitle}`,

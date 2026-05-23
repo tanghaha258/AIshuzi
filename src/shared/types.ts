@@ -2,11 +2,15 @@ export type SessionStatus = "draft" | "active" | "completed";
 
 export type EventType =
   | "teacher_utterance"
+  | "transcript_segment"
   | "student_response"
   | "student_question"
   | "student_distraction"
+  | "student_state_change"
+  | "teacher_observation"
   | "system_suggestion"
-  | "classroom_metric";
+  | "classroom_metric"
+  | "report_evidence";
 
 export interface ModelProviderConfig {
   id: string;

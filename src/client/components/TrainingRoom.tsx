@@ -87,7 +87,7 @@ export function TrainingRoom({
     [events]
   );
   const latestSuggestion = [...events].reverse().find((event) => event.type === "system_suggestion")?.content
-    ?? "开始试讲后，系统会根据教师发言和AI学生反应生成即时策略建议。";
+    ?? "开始试讲后，系统会根据教师发言和 AI 学生反应生成即时策略建议。";
 
   const radarData = [
     { metric: "节奏", value: metrics.pace },
@@ -163,7 +163,7 @@ export function TrainingRoom({
               <div className="camera-placeholder">
                 <Camera size={44} />
                 <strong>{cameraStatus === "blocked" ? "摄像头权限未开启" : "摄像头预览区"}</strong>
-                <span>权限不可用时仍可通过手动输入完成试讲演示</span>
+                <span>权限不可用时仍可通过手动输入完成试讲演示。</span>
               </div>
             )}
           </div>
