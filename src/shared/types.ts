@@ -1,0 +1,126 @@
+export type SessionStatus = "draft" | "active" | "completed";
+
+export type EventType =
+  | "teacher_utterance"
+  | "student_response"
+  | "student_question"
+  | "student_distraction"
+  | "system_suggestion"
+  | "classroom_metric";
+
+export interface ModelProviderConfig {
+  id: string;
+  provider: string;
+  baseURL: string;
+  apiKey: string;
+  model: string;
+  temperature: number;
+  enabled: boolean;
+  updatedAt: string;
+}
+
+export interface StudentAgent {
+  id: string;
+  name: string;
+  avatar: string;
+  personality: string;
+  foundation: number;
+  attention: number;
+  comprehension: number;
+  participation: number;
+  behaviorStyle: string;
+  status: string;
+  strategy: string;
+  createdAt: string;
+}
+
+export interface Course {
+  id: string;
+  title: string;
+  subject: string;
+  grade: string;
+  objectives: string;
+  topic: string;
+  durationMinutes: number;
+  createdAt: string;
+}
+
+export interface TrainingSession {
+  id: string;
+  courseId: string;
+  courseTitle: string;
+  topic: string;
+  status: SessionStatus;
+  selectedStudentIds: string[];
+  startedAt?: string;
+  endedAt?: string;
+  createdAt: string;
+}
+
+export interface ClassroomEvent {
+  id: string;
+  sessionId: string;
+  type: EventType;
+  actor: string;
+  content: string;
+  timestamp: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface ClassroomMetrics {
+  attention: number;
+  confusion: number;
+  interaction: number;
+  pace: number;
+  clarity: number;
+  questioning: number;
+  engagement: number;
+}
+
+export interface EvaluationReport {
+  id: string;
+  sessionId: string;
+  summary: string;
+  metrics: ClassroomMetrics;
+  strengths: string[];
+  improvements: string[];
+  keyMoments: string[];
+  generatedAt: string;
+}
+
+export interface DashboardData {
+  courses: Course[];
+  students: StudentAgent[];
+  sessions: TrainingSession[];
+  reports: EvaluationReport[];
+}
+
+export interface SimulationTurn {
+  teacherText: string;
+  responses: ClassroomEvent[];
+  suggestion: ClassroomEvent;
+  metrics: ClassroomMetrics;
+}
+
+export interface CreateSessionPayload {
+  courseId: string;
+  selectedStudentIds: string[];
+}
+
+export interface CreateCoursePayload {
+  title: string;
+  subject: string;
+  grade: string;
+  objectives: string;
+  topic: string;
+  durationMinutes: number;
+}
+
+export interface UpsertModelProviderPayload {
+  provider: string;
+  baseURL: string;
+  apiKey: string;
+  model: string;
+  temperature: number;
+  enabled: boolean;
+}

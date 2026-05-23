@@ -1,0 +1,37 @@
+{
+  "name": "ai-digital-student-micro-teaching-platform",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -n SERVER,CLIENT -c cyan,magenta \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:server": "tsx watch src/server/index.ts",
+    "dev:client": "vite --host 0.0.0.0",
+    "build": "npm run build:server && npm run build:client",
+    "build:server": "tsc -p tsconfig.server.json",
+    "build:client": "vite build",
+    "start": "node dist/server/server/index.js",
+    "electron": "echo Electron shell is scaffolded in ./electron and can be wired after web validation.",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "6.0.2",
+    "concurrently": "9.2.1",
+    "cors": "^2.8.5",
+    "express": "5.2.1",
+    "lucide-react": "0.468.0",
+    "tsx": "4.22.3",
+    "vite": "8.0.14",
+    "typescript": "5.9.3",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "recharts": "3.8.1"
+  },
+  "devDependencies": {
+    "@types/cors": "2.8.19",
+    "@types/express": "5.0.6",
+    "@types/node": "22.19.19",
+    "@types/react": "19.2.15",
+    "@types/react-dom": "19.2.3"
+  }
+}

@@ -1,0 +1,297 @@
+import express from "express";
+import cors from "cors";
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { initDb, store } from "./db.js";
+import { callChatCompletion, generateAiStudentTurn, streamChatCompletion, validateProviderConfig } from "./ai/provider.js";
+import { buildTurnEvents, calculateMetrics, createReport } from "./domain/simulation.js";
+import type { CreateCoursePayload, CreateSessionPayload, UpsertModelProviderPayload } from "../shared/types.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const app = express();
+const port = Number(process.env.PORT ?? 3001);
+
+initDb();
+
+app.use(cors());
+app.use(express.json({ limit: "1mb" }));
+
+function requireString(value: unknown, fallback = "") {
+  return typeof value === "string" ? value.trim() : fallback;
+}
+
+app.get("/api/health", (_req, res) => {
+  res.json({ ok: true, time: new Date().toISOString() });
+});
+
+app.get("/api/dashboard", (_req, res) => {
+  res.json({
+    courses: store.listCourses(),
+    students: store.listStudents(),
+    sessions: store.listSessions(),
+    reports: store.listReports()
+  });
+});
+
+app.get("/api/courses", (_req, res) => {
+  res.json(store.listCourses());
+});
+
+app.post("/api/courses", (req, res) => {
+  const body = req.body as Partial<CreateCoursePayload>;
+  const course = store.createCourse({
+    title: requireString(body.title, "未命名课程"),
+    subject: requireString(body.subject, "综合"),
+    grade: requireString(body.grade, "未设置年级"),
+    objectives: requireString(body.objectives, "训练教师完成课堂导入、提问和反馈。"),
+    topic: requireString(body.topic, "微格试讲主题"),
+    durationMinutes: Number(body.durationMinutes || 10)
+  });
+  res.status(201).json(course);
+});
+
+app.delete("/api/courses/:id", (req, res) => {
+  const deleted = store.deleteCourse(req.params.id);
+  if (!deleted) {
+    res.status(404).json({ message: "Course not found" });
+    return;
+  }
+  res.json({ ok: true });
+});
+
+app.get("/api/students", (_req, res) => {
+  res.json(store.listStudents());
+});
+
+app.post("/api/students", (req, res) => {
+  const body = req.body ?? {};
+  const student = store.upsertStudent({
+    id: typeof body.id === "string" ? body.id : undefined,
+    name: requireString(body.name, "新学生"),
+    avatar: requireString(body.avatar, "自定义"),
+    personality: requireString(body.personality, "课堂表现待观察"),
+    foundation: Number(body.foundation || 60),
+    attention: Number(body.attention || 60),
+    comprehension: Number(body.comprehension || 60),
+    participation: Number(body.participation || 60),
+    behaviorStyle: requireString(body.behaviorStyle, "根据课堂情境自然回应"),
+    status: requireString(body.status, "观察"),
+    strategy: requireString(body.strategy, "用明确任务引导参与")
+  });
+  res.status(201).json(student);
+});
+
+app.get("/api/sessions", (_req, res) => {
+  res.json(store.listSessions());
+});
+
+app.get("/api/sessions/:id", (req, res) => {
+  const session = store.getSession(req.params.id);
+  if (!session) {
+    res.status(404).json({ message: "Session not found" });
+    return;
+  }
+  res.json({
+    session,
+    events: store.listEvents(session.id),
+    report: store.getReport(session.id)
+  });
+});
+
+app.post("/api/sessions", (req, res) => {
+  const body = req.body as Partial<CreateSessionPayload>;
+  const course = store.listCourses().find((item) => item.id === body.courseId) ?? store.listCourses()[0];
+  if (!course) {
+    res.status(400).json({ message: "请先创建课程。" });
+    return;
+  }
+  const students = store.listStudents();
+  const selectedStudentIds = Array.isArray(body.selectedStudentIds) && body.selectedStudentIds.length
+    ? body.selectedStudentIds
+    : students.slice(0, 6).map((student) => student.id);
+  res.status(201).json(store.createSession(course, selectedStudentIds));
+});
+
+app.delete("/api/sessions/:id", (req, res) => {
+  const deleted = store.deleteSession(req.params.id);
+  if (!deleted) {
+    res.status(404).json({ message: "Session not found" });
+    return;
+  }
+  res.json({ ok: true });
+});
+
+app.post("/api/sessions/:id/start", (req, res) => {
+  const session = store.updateSessionStatus(req.params.id, "active");
+  if (!session) {
+    res.status(404).json({ message: "Session not found" });
+    return;
+  }
+  res.json(session);
+});
+
+app.post("/api/sessions/:id/turn", async (req, res) => {
+  const session = store.getSession(req.params.id);
+  if (!session) {
+    res.status(404).json({ message: "Session not found" });
+    return;
+  }
+  const teacherText = requireString(req.body?.teacherText);
+  if (!teacherText) {
+    res.status(400).json({ message: "教师发言不能为空。" });
+    return;
+  }
+
+  const activeSession = session.status === "active" ? session : store.updateSessionStatus(session.id, "active") ?? session;
+  const teacherEvent = store.addEvent({
+    sessionId: activeSession.id,
+    type: "teacher_utterance",
+    actor: "教师",
+    content: teacherText,
+    metadata: {
+      input: req.body?.inputMode === "speech" ? "speech" : "manual"
+    }
+  });
+
+  const allStudents = store.listStudents();
+  const selectedStudents = allStudents.filter((student) => activeSession.selectedStudentIds.includes(student.id));
+  const provider = store.getProvider();
+  const aiTurn = await generateAiStudentTurn(provider, {
+    session: activeSession,
+    students: selectedStudents.length ? selectedStudents : allStudents.slice(0, 6),
+    teacherText
+  });
+
+  const savedEvents = buildTurnEvents(activeSession.id, aiTurn.result, aiTurn.usedModel).map((event) => store.addEvent(event));
+  const allEvents = store.listEvents(activeSession.id);
+  const metrics = calculateMetrics(allEvents, selectedStudents);
+  const metricEvent = store.addEvent({
+    sessionId: activeSession.id,
+    type: "classroom_metric",
+    actor: "课堂脉搏",
+    content: `注意力 ${metrics.attention}，困惑度 ${metrics.confusion}，互动度 ${metrics.interaction}`,
+    metadata: { ...metrics }
+  });
+
+  res.json({
+    teacherEvent,
+    responses: savedEvents,
+    metricEvent,
+    metrics,
+    usedModel: aiTurn.usedModel
+  });
+});
+
+app.post("/api/sessions/:id/complete", (req, res) => {
+  const session = store.updateSessionStatus(req.params.id, "completed");
+  if (!session) {
+    res.status(404).json({ message: "Session not found" });
+    return;
+  }
+  const students = store.listStudents().filter((student) => session.selectedStudentIds.includes(student.id));
+  const events = store.listEvents(session.id);
+  const report = store.saveReport(createReport(session, events, students));
+  res.json({ session, report });
+});
+
+app.get("/api/model-provider", (_req, res) => {
+  const provider = store.getProvider();
+  res.json({ ...provider, apiKey: provider.apiKey ? "********" : "" });
+});
+
+app.post("/api/model-provider", (req, res) => {
+  const body = req.body as Partial<UpsertModelProviderPayload>;
+  const current = store.getProvider();
+  const rawApiKey = requireString(body.apiKey, current.apiKey);
+  const apiKey = rawApiKey === "********" ? current.apiKey : rawApiKey;
+  const config = store.saveProvider({
+    provider: requireString(body.provider, current.provider),
+    baseURL: requireString(body.baseURL, current.baseURL),
+    apiKey,
+    model: requireString(body.model, current.model),
+    temperature: Number(body.temperature ?? current.temperature),
+    enabled: Boolean(body.enabled)
+  });
+  res.json({ ...config, apiKey: config.apiKey ? "********" : "" });
+});
+
+app.post("/api/model-provider/test", async (req, res) => {
+  const current = store.getProvider();
+  const body = req.body as Partial<UpsertModelProviderPayload>;
+  const rawApiKey = requireString(body.apiKey, current.apiKey);
+  const config = {
+    ...current,
+    provider: requireString(body.provider, current.provider),
+    baseURL: requireString(body.baseURL, current.baseURL),
+    apiKey: rawApiKey === "********" ? current.apiKey : rawApiKey,
+    model: requireString(body.model, current.model),
+    temperature: Number(body.temperature ?? current.temperature),
+    enabled: Boolean(body.enabled)
+  };
+  const validation = validateProviderConfig(config);
+  if (!validation.ok) {
+    res.json({ ok: false, message: validation.message });
+    return;
+  }
+  try {
+    const reply = await callChatCompletion(
+      config,
+      [
+        { role: "system", content: "你是模型连接测试助手，只用中文简短回复。" },
+        { role: "user", content: "请回复：模型连接正常。" }
+      ],
+      { maxTokens: 24 }
+    );
+    res.json({ ok: true, message: reply || "模型连接正常。" });
+  } catch (error) {
+    res.json({ ok: false, message: error instanceof Error ? error.message : "模型连接测试失败。" });
+  }
+});
+
+app.post("/api/model-provider/stream-test", async (req, res) => {
+  const config = store.getProvider();
+  const validation = validateProviderConfig(config);
+  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  if (!validation.ok) {
+    res.write(`data: ${JSON.stringify({ token: validation.message })}\n\n`);
+    res.write("event: done\ndata: {}\n\n");
+    res.end();
+    return;
+  }
+  try {
+    await streamChatCompletion(
+      config,
+      [
+        { role: "system", content: "你是模型流式输出测试助手。" },
+        { role: "user", content: "请用一句中文说明流式输出正常。" }
+      ],
+      (token) => res.write(`data: ${JSON.stringify({ token })}\n\n`)
+    );
+    res.write("event: done\ndata: {}\n\n");
+    res.end();
+  } catch (error) {
+    res.write(`data: ${JSON.stringify({ token: error instanceof Error ? error.message : "流式测试失败。" })}\n\n`);
+    res.write("event: done\ndata: {}\n\n");
+    res.end();
+  }
+});
+
+const builtClientDir = path.resolve(process.cwd(), "dist/client");
+const clientDir = existsSync(path.join(builtClientDir, "index.html"))
+  ? builtClientDir
+  : path.resolve(__dirname, "../client");
+app.use(express.static(clientDir));
+app.use((req, res) => {
+  if (req.path.startsWith("/api")) {
+    res.status(404).json({ message: "API not found" });
+    return;
+  }
+  res.sendFile(path.join(clientDir, "index.html"));
+});
+
+app.listen(port, () => {
+  console.log(`AI数字学生课堂微格实训平台后端已启动：http://localhost:${port}`);
+});
