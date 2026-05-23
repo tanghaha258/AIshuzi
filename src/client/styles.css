@@ -512,7 +512,11 @@ meter::-webkit-meter-optimum-value {
 
 .training-grid {
   display: grid;
-  grid-template-columns: minmax(285px, 0.74fr) minmax(620px, 1.58fr) minmax(280px, 0.68fr);
+  grid-template-columns: minmax(0, 1fr) minmax(330px, 410px);
+  grid-template-areas:
+    "stage teacher"
+    "stage teacher"
+    "insights teacher";
   gap: 14px;
   align-items: start;
 }
@@ -524,12 +528,26 @@ meter::-webkit-meter-optimum-value {
   min-width: 0;
 }
 
+.teacher-column {
+  grid-area: teacher;
+  position: sticky;
+  top: 18px;
+}
+
+.insight-rail {
+  grid-area: insights;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: stretch;
+}
+
 .student-stage {
+  grid-area: stage;
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
-  min-height: 650px;
+  min-height: clamp(640px, calc(100vh - 176px), 820px);
   overflow: hidden;
   background:
+    radial-gradient(circle at 45% 0%, rgba(75, 216, 200, 0.16), transparent 34%),
     linear-gradient(180deg, rgba(20, 53, 68, 0.95), rgba(9, 23, 32, 0.98)),
     #0f1d27;
 }
@@ -556,10 +574,15 @@ meter::-webkit-meter-optimum-value {
 .student-stage__grid {
   min-height: 0;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   overflow: auto;
   padding-right: 2px;
+}
+
+.student-stage__deck {
+  grid-template-columns: repeat(auto-fit, minmax(236px, 1fr));
+  align-content: start;
+  gap: 12px;
 }
 
 .training-header {
@@ -717,10 +740,10 @@ meter::-webkit-meter-optimum-value {
 }
 
 .student-agent-card--portrait {
-  grid-template-columns: minmax(96px, 0.48fr) minmax(0, 1fr);
+  grid-template-columns: 1fr;
   align-items: stretch;
-  min-height: 178px;
-  padding: 10px;
+  min-height: 356px;
+  padding: 12px;
   background:
     linear-gradient(135deg, rgba(75, 216, 200, 0.08), rgba(91, 140, 255, 0.05)),
     #102633;
@@ -736,27 +759,46 @@ meter::-webkit-meter-optimum-value {
   min-width: 0;
   display: grid;
   align-content: start;
-  gap: 7px;
+  gap: 8px;
 }
 
 .student-agent-card__figure {
   min-width: 0;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  gap: 7px;
+  grid-template-rows: auto minmax(190px, 1fr);
+  gap: 8px;
+}
+
+.student-dialogue {
+  align-content: center;
+  gap: 2px;
+}
+
+.student-dialogue strong {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.student-live-status {
+  color: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  opacity: 0.72;
 }
 
 .student-status-bubble {
   position: relative;
   display: grid;
   place-items: center;
-  min-height: 32px;
-  padding: 5px 8px;
+  min-height: 46px;
+  padding: 6px 9px;
   color: #ecfbfc;
   border: 1px solid rgba(116, 222, 213, 0.35);
   border-radius: 8px;
   background: rgba(8, 25, 34, 0.9);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 800;
   line-height: 1.25;
   text-align: center;
@@ -812,6 +854,7 @@ meter::-webkit-meter-optimum-value {
 
 .student-agent-card span,
 .student-agent-card p,
+.student-agent-card__memory,
 .agent-bars label {
   color: #9fb7c8;
   font-size: 11px;
@@ -820,6 +863,23 @@ meter::-webkit-meter-optimum-value {
 .student-agent-card p {
   margin: 0;
   line-height: 1.42;
+}
+
+.student-agent-card__metrics {
+  padding: 8px;
+  border: 1px solid rgba(159, 183, 200, 0.14);
+  border-radius: 6px;
+  background: rgba(8, 25, 34, 0.28);
+}
+
+.student-agent-card__last-line {
+  min-height: 34px;
+}
+
+.student-agent-card__memory {
+  display: block;
+  min-height: 34px;
+  line-height: 1.45;
 }
 
 .agent-face--0 { background: #d8f0ef; color: #0d665f; }
@@ -839,8 +899,8 @@ meter::-webkit-meter-optimum-value {
 
 .student-portrait svg {
   width: 100%;
-  max-height: 142px;
-  min-height: 136px;
+  max-height: 228px;
+  min-height: 190px;
   display: block;
   filter: drop-shadow(0 14px 18px rgba(0, 0, 0, 0.28));
 }
@@ -1163,12 +1223,11 @@ meter::-webkit-meter-optimum-value {
 
 @media (max-width: 1500px) and (min-width: 1181px) {
   .training-grid {
-    grid-template-columns: minmax(300px, 0.7fr) minmax(560px, 1.3fr);
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
   }
 
   .insight-rail {
-    grid-column: 1 / -1;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     align-items: stretch;
   }
 
@@ -1189,6 +1248,21 @@ meter::-webkit-meter-optimum-value {
   .training-grid,
   .dashboard-grid {
     grid-template-columns: 1fr;
+  }
+
+  .training-grid {
+    grid-template-areas:
+      "teacher"
+      "stage"
+      "insights";
+  }
+
+  .teacher-column {
+    position: static;
+  }
+
+  .insight-rail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .student-matrix,
@@ -1214,6 +1288,8 @@ meter::-webkit-meter-optimum-value {
   .planner-grid,
   .student-grid,
   .student-stage__grid,
+  .student-stage__deck,
+  .insight-rail,
   .student-management-grid,
   .reports-grid,
   .form-grid,
@@ -1222,7 +1298,8 @@ meter::-webkit-meter-optimum-value {
   }
 
   .student-agent-card--portrait {
-    grid-template-columns: minmax(112px, 150px) minmax(0, 1fr);
+    grid-template-columns: 1fr;
+    min-height: auto;
   }
 
   .form-grid__wide {

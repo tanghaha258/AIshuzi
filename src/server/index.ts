@@ -181,11 +181,14 @@ app.post("/api/sessions/:id/turn", async (req, res) => {
   const runtimeStudents = selectedStudents.length ? selectedStudents : allStudents.slice(0, 6);
   const runtimeStates = store.ensureRuntimeStates(activeSession.id, runtimeStudents);
   const respondingStudents = selectStudentsForTurn(runtimeStudents, runtimeStates, teacherText, Math.min(4, runtimeStudents.length));
+  const recentEvents = store.listEvents(activeSession.id).slice(-8);
   const provider = store.getProvider();
   const aiTurn = await generateAiStudentTurn(provider, {
     session: activeSession,
     students: respondingStudents,
-    teacherText
+    teacherText,
+    runtimeStates,
+    recentEvents
   });
 
   const updatedRuntimeStates = applyStudentMessagesToRuntime(runtimeStates, aiTurn.result.messages);

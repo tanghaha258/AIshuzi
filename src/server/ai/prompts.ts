@@ -10,6 +10,24 @@ export interface PromptBundle {
 }
 
 export function buildStudentTurnPrompt(context: GenerateStudentContext): PromptBundle {
+  const runtimeStates = context.runtimeStates?.map((state) => ({
+    studentId: state.studentId,
+    attention: state.attention,
+    comprehension: state.comprehension,
+    participation: state.participation,
+    pose: state.pose,
+    emotion: state.emotion,
+    statusText: state.statusText,
+    memory: state.memory.slice(-3),
+    lastSpokeAt: state.lastSpokeAt
+  })) ?? [];
+  const recentEvents = context.recentEvents?.slice(-8).map((event) => ({
+    type: event.type,
+    actor: event.actor,
+    content: event.content,
+    timestamp: event.timestamp
+  })) ?? [];
+
   return {
     maxTokens: 700,
     successMessage: "AI学生回应 JSON 生成正常。",
@@ -22,6 +40,7 @@ export function buildStudentTurnPrompt(context: GenerateStudentContext): PromptB
         role: "user",
         content: [
           "请基于教师发言和学生画像，生成 2-4 个 AI学生的真实课堂反应，并给教师一条即时教学策略建议。",
+          "每个学生的回应必须延续自己的课堂运行态、上一轮记忆和最近事件，不要把所有学生写成同一种口吻。",
           "输出 JSON 格式必须严格符合：",
           '{"messages":[{"studentId":"...","studentName":"...","content":"...","mood":"..."}],"suggestion":"..."}',
           `课程：${context.session.courseTitle}`,
@@ -39,7 +58,9 @@ export function buildStudentTurnPrompt(context: GenerateStudentContext): PromptB
               behaviorStyle: student.behaviorStyle,
               status: student.status
             }))
-          )}`
+          )}`,
+          `课堂运行态：${JSON.stringify(runtimeStates)}`,
+          `最近课堂事件：${JSON.stringify(recentEvents)}`
         ].join("\n")
       }
     ]

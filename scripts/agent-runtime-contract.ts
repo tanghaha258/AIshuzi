@@ -4,6 +4,7 @@ import {
   advanceRuntimeTick,
   applyStudentMessagesToRuntime,
   createInitialRuntimeState,
+  inferRuntimePose,
   selectStudentsForTurn
 } from "../src/server/services/studentState.js";
 import type { StudentAgent } from "../src/shared/types.js";
@@ -94,5 +95,15 @@ const ticked = advanceRuntimeTick(updated, students, "2026-05-24T08:01:08.000Z")
 assert.equal(ticked.states.length, 3);
 assert.ok(ticked.events.some((event) => event.type === "student_state_change"));
 assert.ok(ticked.states.some((state) => state.statusText !== initialStates.find((item) => item.studentId === state.studentId)?.statusText));
+
+assert.equal(
+  inferRuntimePose("听不懂时会沉默，需要具体例子。", {
+    ...students[0],
+    attention: 66,
+    status: "困惑",
+    behaviorStyle: "听不懂时沉默，需要具体例子。"
+  }),
+  "confused"
+);
 
 console.log("Agent runtime contract passed.");

@@ -320,11 +320,14 @@ export function TrainingRoom({
             <span>提问 {questionCount}</span>
             <span>走神 {distractedCount}</span>
           </div>
-          <div className="student-stage__grid">
+          <div className="student-stage__grid student-stage__deck">
             {studentSnapshots.map(({ student, runtime, index, lastEvent, pose, statusText, lastLine }) => (
               <article className="student-agent-card student-agent-card--portrait" key={student.id}>
                 <div className="student-agent-card__figure">
-                  <div className={`student-status-bubble student-status-bubble--${pose}`}>{statusText}</div>
+                  <div className={`student-dialogue student-status-bubble student-status-bubble--${pose}`}>
+                    <span className="student-live-status">{studentMoodLabel(pose)}</span>
+                    <strong>{statusText}</strong>
+                  </div>
                   <StudentPortrait
                     name={student.name}
                     pose={pose}
@@ -340,13 +343,15 @@ export function TrainingRoom({
                     </div>
                     <span className="mini-live">Live</span>
                   </div>
-                  <div className="agent-bars">
+                  <div className="agent-bars student-agent-card__metrics">
                     <label>注意力 <meter value={runtime?.attention ?? student.attention} max={100} /></label>
                     <label>理解度 <meter value={runtime?.comprehension ?? student.comprehension} max={100} /></label>
                     <label>参与度 <meter value={runtime?.participation ?? student.participation} max={100} /></label>
                   </div>
-                  <p>{lastLine}</p>
-                  <small>{runtime?.memory.length ? `课堂记忆：${runtime.memory[runtime.memory.length - 1]}` : lastEvent ? `最近状态：${lastEvent.type}` : student.strategy}</small>
+                  <p className="student-agent-card__last-line">{lastLine}</p>
+                  <small className="student-agent-card__memory">
+                    {runtime?.memory.length ? `课堂记忆：${runtime.memory[runtime.memory.length - 1]}` : lastEvent ? `最近状态：${lastEvent.type}` : student.strategy}
+                  </small>
                 </div>
               </article>
             ))}

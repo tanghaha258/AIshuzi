@@ -14,9 +14,12 @@ function clamp(value: number, min = 0, max = 100) {
 
 export function inferRuntimePose(text: string, student?: StudentAgent): StudentRuntimePose {
   const source = `${text} ${student?.status ?? ""} ${student?.personality ?? ""} ${student?.behaviorStyle ?? ""}`;
+  const activeSource = `${text} ${student?.status ?? ""}`;
   if (/质疑|挑战|为什么|如果|边界|例外|反问/.test(source)) return "challenging";
-  if (/走神|发呆|分心|沉默|低头|漂移/.test(source) || (student?.attention ?? 100) < 45) return "distracted";
+  if (/走神|发呆|分心|低头|漂移/.test(activeSource) || (student?.attention ?? 100) < 45) return "distracted";
+  if (/困惑|不懂|跟不上|不会|听不懂|卡住|确认/.test(activeSource)) return "confused";
   if (/困惑|不懂|跟不上|不会|听不懂|卡住|确认/.test(source)) return "confused";
+  if (/走神|发呆|分心|低头|漂移/.test(source)) return "distracted";
   if (/举手|积极|抢答|主动|回应|补充|说思路/.test(source) || (student?.participation ?? 0) > 80) return "smiling";
   if (/思考|慢热|观察|等待|安静|组织/.test(source) || (student?.comprehension ?? 100) < 55) return "thinking";
   return "listening";

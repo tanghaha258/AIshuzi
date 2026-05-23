@@ -1,4 +1,10 @@
-import type { ModelProviderConfig, StudentAgent, TrainingSession } from "../../shared/types.js";
+import type {
+  ClassroomEvent,
+  ModelProviderConfig,
+  StudentAgent,
+  StudentRuntimeState,
+  TrainingSession
+} from "../../shared/types.js";
 import { parseJsonObject } from "./json.js";
 import { buildStudentTurnPrompt } from "./prompts.js";
 
@@ -6,6 +12,8 @@ export interface GenerateStudentContext {
   session: TrainingSession;
   students: StudentAgent[];
   teacherText: string;
+  runtimeStates?: StudentRuntimeState[];
+  recentEvents?: ClassroomEvent[];
 }
 
 export interface AiStudentMessage {
@@ -181,14 +189,93 @@ export async function streamChatCompletion(
   }
 }
 
-function fallbackMessage(student: StudentAgent, teacherText: string, index: number): AiStudentMessage {
+function runtimeForStudent(context: GenerateStudentContext, studentId: string) {
+  return context.runtimeStates?.find((state) => state.studentId === studentId);
+}
+
+function latestMemoryForStudent(context: GenerateStudentContext, studentId: string) {
+  const state = runtimeForStudent(context, studentId);
+  return state?.memory[state.memory.length - 1] ?? "";
+}
+
+function summarizeMemory(memory: string) {
+  const clipped = memory.replace(/[。！？!?].*$/, "").slice(0, 42);
+  return clipped || "刚才那一步";
+}
+
+function inferLessonAnchor(teacherText: string) {
+  if (/限定词|几乎|大约|左右|可能|之一|主要|绝大多数/.test(teacherText)) {
+    return "限定词和它对表达准确性的作用";
+  }
+  if (/关键词|第一步|看哪里|划出|找/.test(teacherText)) {
+    return "关键词和第一步判断依据";
+  }
+  if (/直角|斜边|勾股|三角形/.test(teacherText)) {
+    return "直角边、斜边和三边关系";
+  }
+  const cleaned = teacherText
+    .replace(/[\s，。！？!?、；;：:]+/g, " ")
+    .replace(/^[^，。！？!?]*?(同学们|你来|谁能|请|说说)/, "")
+    .trim();
+  return cleaned.slice(0, 18) || "这个关键步骤";
+}
+
+function fallbackMessage(student: StudentAgent, context: GenerateStudentContext, index: number): AiStudentMessage {
+  const { teacherText } = context;
   const text = teacherText.toLowerCase();
   const hasQuestion = /吗|什么|为什么|怎么|如何|\?|？/.test(teacherText);
+  const runtime = runtimeForStudent(context, student.id);
+  const memory = latestMemoryForStudent(context, student.id);
+  const lessonAnchor = inferLessonAnchor(teacherText);
+  const runtimeText = `${runtime?.pose ?? ""} ${runtime?.statusText ?? ""} ${runtime?.emotion ?? ""} ${memory}`;
+  const namedByTeacher = teacherText.includes(student.name);
+
+  if (/质疑|挑战|边界|例外|反问/.test(`${student.status} ${student.personality} ${runtimeText}`)) {
+    return {
+      studentId: student.id,
+      studentName: student.name,
+      content: "老师，如果条件换一下或者限定词放到别的句子里，是不是就不能直接下结论？",
+      mood: runtime?.statusText || student.status || "边界追问"
+    };
+  }
+
+  if (/走神|漏听|低头|distracted/.test(`${student.status} ${student.behaviorStyle} ${runtimeText}`)) {
+    const anchor = memory ? summarizeMemory(memory) : lessonAnchor;
+    return {
+      studentId: student.id,
+      studentName: student.name,
+      content: namedByTeacher
+        ? `老师，我刚才漏听了一点，记得第一步是${anchor}，我这样说对吗？`
+        : `老师，我刚才有点走神，想确认现在是不是还在讲${anchor || "这个关键步骤"}？`,
+      mood: runtime?.statusText || "回到课堂"
+    };
+  }
+
+  if (/困惑|不懂|跟不上|不会|听不懂|confused/.test(`${student.status} ${student.behaviorStyle} ${runtimeText}`)) {
+    const anchor = memory ? summarizeMemory(memory) : lessonAnchor;
+    return {
+      studentId: student.id,
+      studentName: student.name,
+      content: `老师，我能跟到${anchor}，但后面为什么这样判断还不太明白。`,
+      mood: runtime?.statusText || "有点困惑"
+    };
+  }
+
+  if (/投入|积极|举手|主动|抢答|smiling/.test(`${student.status} ${student.personality} ${student.behaviorStyle} ${runtimeText}`)) {
+    const anchor = memory ? summarizeMemory(memory) : lessonAnchor;
+    return {
+      studentId: student.id,
+      studentName: student.name,
+      content: `我觉得可以先抓住${anchor}，再补充说明它对表达准确性的影响。`,
+      mood: runtime?.statusText || "积极回应"
+    };
+  }
+
   const templates = [
     "老师，我有点跟不上，能不能把刚才这一步再拆开说一下？",
     "我觉得可以先找直角边，再看斜边是不是最长的那一条。",
     "如果题目换成生活里的楼梯或者操场距离，也能这样算吗？",
-    `我刚才走神了，想确认一下现在是在用 ${teacherText.slice(0, 18) || "这个知识点"} 吗？`,
+    `我想确认一下现在是不是先看 ${teacherText.slice(0, 18) || "这个知识点"}。`,
     "这个结论我能记住，但不知道什么时候该用。"
   ];
   const challenge = "老师，如果条件不完整，是不是就不能直接套公式？";
@@ -202,14 +289,21 @@ function fallbackMessage(student: StudentAgent, teacherText: string, index: numb
     studentId: student.id,
     studentName: student.name,
     content: text.length > 1 ? content : "老师，我准备好了，可以开始。",
-    mood: student.status
+    mood: runtime?.statusText || student.status
   };
 }
 
-function fallbackSuggestion(messages: AiStudentMessage[]) {
+function fallbackSuggestion(messages: AiStudentMessage[], context?: GenerateStudentContext) {
   const confused = messages.filter((message) => /跟不上|不知道|确认|不能|不懂/.test(message.content));
+  const driftingStudents = context?.students.filter((student) => {
+    const runtime = runtimeForStudent(context, student.id);
+    return runtime?.pose === "distracted" || /走神|漏听/.test(runtime?.statusText ?? student.status);
+  }) ?? [];
   if (confused.length > 1) {
     return "当前有多名学生出现理解阻滞，建议暂停推进，换一个生活化例子，并用一个封闭式小问题确认全班是否跟上。";
+  }
+  if (driftingStudents.length) {
+    return `注意 ${driftingStudents.map((student) => student.name).join("、")} 出现走神或漏听信号，建议用点名复述和一步确认把注意力拉回课堂。`;
   }
   if (messages.some((message) => /如果|是不是/.test(message.content))) {
     return "学生开始提出边界问题，可以先肯定问题价值，再把追问转成全班判断任务，避免课堂被单个问题带偏。";
@@ -245,12 +339,12 @@ export async function generateAiStudentTurn(
   context: GenerateStudentContext
 ): Promise<{ usedModel: boolean; result: AiSuggestionResult }> {
   if (!config.enabled || !config.apiKey || !config.baseURL || !config.model) {
-    const messages = context.students.slice(0, 3).map((student, index) => fallbackMessage(student, context.teacherText, index));
+    const messages = context.students.slice(0, 3).map((student, index) => fallbackMessage(student, context, index));
     return {
       usedModel: false,
       result: {
         messages,
-        suggestion: fallbackSuggestion(messages)
+        suggestion: fallbackSuggestion(messages, context)
       }
     };
   }
@@ -263,12 +357,12 @@ export async function generateAiStudentTurn(
       result: normalizeStudentTurnResult(raw, context.students)
     };
   } catch {
-    const messages = context.students.slice(0, 3).map((student, index) => fallbackMessage(student, context.teacherText, index));
+    const messages = context.students.slice(0, 3).map((student, index) => fallbackMessage(student, context, index));
     return {
       usedModel: false,
       result: {
         messages,
-        suggestion: `${fallbackSuggestion(messages)} 当前模型调用不可用，系统已切换为本地模拟回应。`
+        suggestion: `${fallbackSuggestion(messages, context)} 当前模型调用不可用，系统已切换为本地模拟回应。`
       }
     };
   }
