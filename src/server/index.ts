@@ -7,6 +7,12 @@ import { initDb, store } from "./db.js";
 import { callChatCompletion, callJsonCompletion, generateAiStudentTurn, streamChatCompletion, validateProviderConfig } from "./ai/provider.js";
 import { buildProviderScenarioPrompt, type ProviderScenario } from "./ai/prompts.js";
 import { buildTurnEvents, calculateMetrics, createReport } from "./domain/simulation.js";
+import {
+  advanceRuntimeTick,
+  applyStudentMessagesToRuntime,
+  buildRuntimeStateEvents,
+  selectStudentsForTurn
+} from "./services/studentState.js";
 import type { CreateCoursePayload, CreateSessionPayload, UpsertModelProviderPayload } from "../shared/types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -106,9 +112,11 @@ app.get("/api/sessions/:id", (req, res) => {
     res.status(404).json({ message: "Session not found" });
     return;
   }
+  const students = store.listStudents().filter((student) => session.selectedStudentIds.includes(student.id));
   res.json({
     session,
     events: store.listEvents(session.id),
+    runtimeStates: store.ensureRuntimeStates(session.id, students),
     report: store.getReport(session.id)
   });
 });
@@ -170,16 +178,22 @@ app.post("/api/sessions/:id/turn", async (req, res) => {
 
   const allStudents = store.listStudents();
   const selectedStudents = allStudents.filter((student) => activeSession.selectedStudentIds.includes(student.id));
+  const runtimeStudents = selectedStudents.length ? selectedStudents : allStudents.slice(0, 6);
+  const runtimeStates = store.ensureRuntimeStates(activeSession.id, runtimeStudents);
+  const respondingStudents = selectStudentsForTurn(runtimeStudents, runtimeStates, teacherText, Math.min(4, runtimeStudents.length));
   const provider = store.getProvider();
   const aiTurn = await generateAiStudentTurn(provider, {
     session: activeSession,
-    students: selectedStudents.length ? selectedStudents : allStudents.slice(0, 6),
+    students: respondingStudents,
     teacherText
   });
 
-  const savedEvents = buildTurnEvents(activeSession.id, aiTurn.result, aiTurn.usedModel).map((event) => store.addEvent(event));
+  const updatedRuntimeStates = applyStudentMessagesToRuntime(runtimeStates, aiTurn.result.messages);
+  updatedRuntimeStates.forEach((state) => store.upsertRuntimeState(state));
+  const stateEvents = buildRuntimeStateEvents(runtimeStates, updatedRuntimeStates, runtimeStudents).map((event) => store.addEvent(event));
+  const savedEvents = buildTurnEvents(activeSession.id, aiTurn.result, aiTurn.usedModel, updatedRuntimeStates).map((event) => store.addEvent(event));
   const allEvents = store.listEvents(activeSession.id);
-  const metrics = calculateMetrics(allEvents, selectedStudents);
+  const metrics = calculateMetrics(allEvents, runtimeStudents);
   const metricEvent = store.addEvent({
     sessionId: activeSession.id,
     type: "classroom_metric",
@@ -191,9 +205,28 @@ app.post("/api/sessions/:id/turn", async (req, res) => {
   res.json({
     teacherEvent,
     responses: savedEvents,
+    stateEvents,
     metricEvent,
     metrics,
+    runtimeStates: updatedRuntimeStates,
     usedModel: aiTurn.usedModel
+  });
+});
+
+app.post("/api/sessions/:id/tick", (req, res) => {
+  const session = store.getSession(req.params.id);
+  if (!session) {
+    res.status(404).json({ message: "Session not found" });
+    return;
+  }
+  const students = store.listStudents().filter((student) => session.selectedStudentIds.includes(student.id));
+  const runtimeStates = store.ensureRuntimeStates(session.id, students);
+  const tick = advanceRuntimeTick(runtimeStates, students);
+  tick.states.forEach((state) => store.upsertRuntimeState(state));
+  const stateEvents = tick.events.map((event) => store.addEvent(event));
+  res.json({
+    stateEvents,
+    runtimeStates: tick.states
   });
 });
 

@@ -3,6 +3,7 @@ import type {
   ClassroomMetrics,
   EvaluationReport,
   StudentAgent,
+  StudentRuntimeState,
   TrainingSession
 } from "../../shared/types.js";
 import type { AiSuggestionResult } from "../ai/provider.js";
@@ -48,8 +49,10 @@ function clamp(value: number, min: number, max: number) {
 export function buildTurnEvents(
   sessionId: string,
   aiResult: AiSuggestionResult,
-  usedModel: boolean
+  usedModel: boolean,
+  runtimeStates: StudentRuntimeState[] = []
 ): Array<Omit<ClassroomEvent, "id" | "timestamp">> {
+  const runtimeByStudent = new Map(runtimeStates.map((state) => [state.studentId, state]));
   const events: Array<Omit<ClassroomEvent, "id" | "timestamp">> = aiResult.messages.map((message) => ({
     sessionId,
     type: /吗|为什么|怎么|如何|\?|？/.test(message.content) ? "student_question" : "student_response",
@@ -58,6 +61,7 @@ export function buildTurnEvents(
     metadata: {
       studentId: message.studentId,
       mood: message.mood,
+      runtimeState: runtimeByStudent.get(message.studentId),
       source: usedModel ? "model" : "local-simulation"
     }
   }));

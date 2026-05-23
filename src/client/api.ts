@@ -6,6 +6,7 @@ import type {
   EvaluationReport,
   ModelProviderConfig,
   StudentAgent,
+  StudentRuntimeState,
   TrainingSession
 } from "../shared/types";
 
@@ -36,20 +37,27 @@ export const api = {
       body: JSON.stringify({ courseId, selectedStudentIds })
     }),
   getSession: (sessionId: string) =>
-    request<{ session: TrainingSession; events: ClassroomEvent[]; report?: EvaluationReport }>(`/api/sessions/${sessionId}`),
+    request<{ session: TrainingSession; events: ClassroomEvent[]; runtimeStates: StudentRuntimeState[]; report?: EvaluationReport }>(`/api/sessions/${sessionId}`),
   startSession: (sessionId: string) =>
     request<TrainingSession>(`/api/sessions/${sessionId}/start`, { method: "POST" }),
   sendTurn: (sessionId: string, teacherText: string, inputMode: "manual" | "speech") =>
     request<{
       teacherEvent: ClassroomEvent;
       responses: ClassroomEvent[];
+      stateEvents: ClassroomEvent[];
       metricEvent: ClassroomEvent;
       metrics: ClassroomMetrics;
+      runtimeStates: StudentRuntimeState[];
       usedModel: boolean;
     }>(`/api/sessions/${sessionId}/turn`, {
       method: "POST",
       body: JSON.stringify({ teacherText, inputMode })
     }),
+  tickSession: (sessionId: string) =>
+    request<{
+      stateEvents: ClassroomEvent[];
+      runtimeStates: StudentRuntimeState[];
+    }>(`/api/sessions/${sessionId}/tick`, { method: "POST" }),
   completeSession: (sessionId: string) =>
     request<{ session: TrainingSession; report: EvaluationReport }>(`/api/sessions/${sessionId}/complete`, { method: "POST" }),
   getModelProvider: () => request<ModelProviderConfig>("/api/model-provider"),

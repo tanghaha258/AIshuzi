@@ -8,10 +8,12 @@ import type {
   EvaluationReport,
   ModelProviderConfig,
   StudentAgent,
+  StudentRuntimeState,
   TrainingSession
 } from "../shared/types.js";
 import { createDeepSeekDefaultProvider, isLegacyOpenAiDefaultProvider } from "../shared/providerDefaults.js";
 import { runMigrations } from "./db/migrations.js";
+import { createInitialRuntimeState } from "./services/studentState.js";
 
 const dataDir = path.resolve(process.cwd(), "data");
 const databasePath = process.env.DATABASE_PATH
@@ -108,6 +110,22 @@ function rowToReport(row: Record<string, unknown>): EvaluationReport {
     improvements: json<string[]>(String(row.improvements ?? "[]"), []),
     keyMoments: json<string[]>(String(row.key_moments ?? "[]"), []),
     generatedAt: String(row.generated_at)
+  };
+}
+
+function rowToRuntimeState(row: Record<string, unknown>): StudentRuntimeState {
+  return {
+    sessionId: String(row.session_id),
+    studentId: String(row.student_id),
+    attention: Number(row.attention),
+    comprehension: Number(row.comprehension),
+    participation: Number(row.participation),
+    emotion: String(row.emotion),
+    pose: row.pose as StudentRuntimeState["pose"],
+    statusText: String(row.status_text),
+    memory: json<string[]>(String(row.memory ?? "[]"), []),
+    lastSpokeAt: row.last_spoke_at ? String(row.last_spoke_at) : undefined,
+    updatedAt: String(row.updated_at)
   };
 }
 
@@ -416,6 +434,50 @@ export const store = {
   },
   listEvents(sessionId: string): ClassroomEvent[] {
     return (db.prepare("SELECT * FROM events WHERE session_id = ? ORDER BY timestamp ASC").all(sessionId) as Record<string, unknown>[]).map(rowToEvent);
+  },
+  listRuntimeStates(sessionId: string): StudentRuntimeState[] {
+    return (
+      db.prepare("SELECT * FROM student_runtime_states WHERE session_id = ? ORDER BY student_id ASC").all(sessionId) as Record<string, unknown>[]
+    ).map(rowToRuntimeState);
+  },
+  ensureRuntimeStates(sessionId: string, students: StudentAgent[]): StudentRuntimeState[] {
+    const existing = this.listRuntimeStates(sessionId);
+    const existingIds = new Set(existing.map((state) => state.studentId));
+    const created = students
+      .filter((student) => !existingIds.has(student.id))
+      .map((student) => this.upsertRuntimeState(createInitialRuntimeState(sessionId, student)));
+    return [...existing, ...created].filter((state) => students.some((student) => student.id === state.studentId));
+  },
+  upsertRuntimeState(state: StudentRuntimeState): StudentRuntimeState {
+    db.prepare(`
+      INSERT INTO student_runtime_states (
+        session_id, student_id, attention, comprehension, participation, emotion,
+        pose, status_text, memory, last_spoke_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(session_id, student_id) DO UPDATE SET
+        attention = excluded.attention,
+        comprehension = excluded.comprehension,
+        participation = excluded.participation,
+        emotion = excluded.emotion,
+        pose = excluded.pose,
+        status_text = excluded.status_text,
+        memory = excluded.memory,
+        last_spoke_at = excluded.last_spoke_at,
+        updated_at = excluded.updated_at
+    `).run(
+      state.sessionId,
+      state.studentId,
+      state.attention,
+      state.comprehension,
+      state.participation,
+      state.emotion,
+      state.pose,
+      state.statusText,
+      JSON.stringify(state.memory),
+      state.lastSpokeAt ?? null,
+      state.updatedAt
+    );
+    return state;
   },
   listAllEvents(): ClassroomEvent[] {
     return (db.prepare("SELECT * FROM events ORDER BY timestamp ASC").all() as Record<string, unknown>[]).map(rowToEvent);

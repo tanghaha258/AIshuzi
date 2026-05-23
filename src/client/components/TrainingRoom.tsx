@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Camera,
   CheckCircle2,
@@ -26,16 +26,21 @@ import type {
   ClassroomMetrics,
   EvaluationReport,
   StudentAgent,
+  StudentRuntimeState,
   TrainingSession
 } from "../../shared/types";
+import { StudentPortrait } from "./training/StudentPortrait";
 
 interface TrainingRoomProps {
   session: TrainingSession;
   students: StudentAgent[];
   initialEvents: ClassroomEvent[];
+  initialRuntimeStates: StudentRuntimeState[];
   onSessionChange: (session: TrainingSession) => void;
   onReport: (report: EvaluationReport) => void;
 }
+
+type StudentPose = "listening" | "smiling" | "thinking" | "confused" | "distracted" | "challenging";
 
 const defaultMetrics: ClassroomMetrics = {
   attention: 68,
@@ -58,14 +63,43 @@ function metricColor(value: number, inverse = false) {
   return "danger";
 }
 
+function inferStudentPose(student: StudentAgent, lastEvent?: ClassroomEvent): StudentPose {
+  const text = `${student.status} ${student.personality} ${student.behaviorStyle} ${lastEvent?.content ?? ""}`;
+  if (/质疑|挑战|为什么|如果|边界/.test(text)) return "challenging";
+  if (/困惑|不懂|跟不上|不会|听不懂/.test(text)) return "confused";
+  if (/走神|发呆|分心|沉默|低头/.test(text) || student.attention < 48) return "distracted";
+  if (/举手|积极|抢答|主动|说得对/.test(text) || student.participation > 78) return "smiling";
+  if (/思考|慢热|观察|等待|安静/.test(text) || student.comprehension < 55) return "thinking";
+  return "listening";
+}
+
+function studentMoodLabel(pose: StudentPose) {
+  switch (pose) {
+    case "smiling":
+      return "积极回应";
+    case "thinking":
+      return "认真思考";
+    case "confused":
+      return "有点困惑";
+    case "distracted":
+      return "注意力漂移";
+    case "challenging":
+      return "边界追问";
+    default:
+      return "专注倾听";
+  }
+}
+
 export function TrainingRoom({
   session,
   students,
   initialEvents,
+  initialRuntimeStates,
   onSessionChange,
   onReport
 }: TrainingRoomProps) {
   const [events, setEvents] = useState<ClassroomEvent[]>(initialEvents);
+  const [runtimeStates, setRuntimeStates] = useState<StudentRuntimeState[]>(initialRuntimeStates);
   const [teacherText, setTeacherText] = useState("");
   const [metrics, setMetrics] = useState<ClassroomMetrics>(() => {
     const lastMetric = [...initialEvents].reverse().find((event) => event.type === "classroom_metric");
@@ -82,12 +116,65 @@ export function TrainingRoom({
   }, []);
   const speech = useSpeechRecognition(handleSpeechText);
 
+  useEffect(() => {
+    setEvents(initialEvents);
+  }, [initialEvents, session.id]);
+
+  useEffect(() => {
+    setRuntimeStates(initialRuntimeStates);
+  }, [initialRuntimeStates, session.id]);
+
+  useEffect(() => {
+    if (session.status !== "active") return undefined;
+    let cancelled = false;
+    const interval = window.setInterval(() => {
+      api.tickSession(session.id)
+        .then((result) => {
+          if (cancelled) return;
+          setRuntimeStates(result.runtimeStates);
+          if (result.stateEvents.length) {
+            setEvents((current) => [...current, ...result.stateEvents]);
+          }
+        })
+        .catch(() => undefined);
+    }, 7000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [session.id, session.status]);
+
   const timeline = useMemo(
     () => events.filter((event) => event.type !== "classroom_metric").slice(-8).reverse(),
     [events]
   );
   const latestSuggestion = [...events].reverse().find((event) => event.type === "system_suggestion")?.content
     ?? "开始试讲后，系统会根据教师发言和 AI 学生反应生成即时策略建议。";
+
+  const studentSnapshots = useMemo(() => {
+    const runtimeByStudent = new Map(runtimeStates.map((state) => [state.studentId, state]));
+    return selectedStudents.map((student, index) => {
+      const lastEvent = [...events]
+        .reverse()
+        .find((event) => event.metadata?.studentId === student.id);
+      const runtime = runtimeByStudent.get(student.id);
+      const pose = runtime?.pose ?? inferStudentPose(student, lastEvent);
+      const lastLine = lastEvent?.content ?? student.behaviorStyle;
+      return {
+        student,
+        runtime,
+        index,
+        lastEvent,
+        pose,
+        statusText: runtime?.statusText ?? studentMoodLabel(pose),
+        lastLine
+      };
+    });
+  }, [events, runtimeStates, selectedStudents]);
+
+  const activeCount = studentSnapshots.filter(({ pose }) => pose !== "distracted").length;
+  const questionCount = events.filter((event) => event.type === "student_question").length;
+  const distractedCount = studentSnapshots.filter(({ pose }) => pose === "distracted").length;
 
   const radarData = [
     { metric: "节奏", value: metrics.pace },
@@ -107,7 +194,8 @@ export function TrainingRoom({
     setSubmitting(true);
     try {
       const result = await api.sendTurn(session.id, teacherText.trim(), inputMode);
-      setEvents((current) => [...current, result.teacherEvent, ...result.responses, result.metricEvent]);
+      setEvents((current) => [...current, result.teacherEvent, ...result.stateEvents, ...result.responses, result.metricEvent]);
+      setRuntimeStates(result.runtimeStates);
       setMetrics(result.metrics);
       setTeacherText("");
       setModelNotice(result.usedModel ? "本轮由大模型生成" : "本轮由本地模拟生成");
@@ -124,13 +212,25 @@ export function TrainingRoom({
 
   return (
     <main className="training-room">
-      <section className="training-header">
+      <section className="training-header training-header--wide">
         <div>
           <span className="eyebrow">Teacher Session Area</span>
           <h1>{session.courseTitle}</h1>
           <p>{session.topic} · {session.status === "active" ? "实训进行中" : session.status === "completed" ? "已完成" : "待开始"}</p>
         </div>
         <div className="header-controls">
+          <span className="status-pill">
+            <CircleDot size={15} />
+            {activeCount} 位在场
+          </span>
+          <span className="status-pill">
+            <CircleDot size={15} />
+            {questionCount} 次提问
+          </span>
+          <span className="status-pill">
+            <CircleDot size={15} />
+            {distractedCount} 位走神
+          </span>
           {session.status === "draft" ? (
             <button className="primary-button" type="button" onClick={startSession}>
               <Play size={18} />
@@ -148,8 +248,8 @@ export function TrainingRoom({
         </div>
       </section>
 
-      <section className="sim-grid">
-        <div className="teacher-stack">
+      <section className="training-grid">
+        <div className="teacher-column">
           <div className="screen-card camera-card">
             <div className="screen-card__title">
               <span><Camera size={16} /> 教师摄像头</span>
@@ -210,20 +310,30 @@ export function TrainingRoom({
           </div>
         </div>
 
-        <div className="student-matrix screen-card">
+        <section className="student-stage screen-card">
           <div className="screen-card__title">
-            <span>AI学生互动矩阵</span>
+            <span>AI学生互动舞台</span>
             <span className="model-notice">{modelNotice}</span>
           </div>
-          <div className="student-grid">
-            {selectedStudents.map((student, index) => {
-              const lastEvent = [...events]
-                .reverse()
-                .find((event) => event.metadata?.studentId === student.id);
-              return (
-                <article className="student-agent-card" key={student.id}>
+          <div className="student-stage__summary">
+            <span>在场 {activeCount}</span>
+            <span>提问 {questionCount}</span>
+            <span>走神 {distractedCount}</span>
+          </div>
+          <div className="student-stage__grid">
+            {studentSnapshots.map(({ student, runtime, index, lastEvent, pose, statusText, lastLine }) => (
+              <article className="student-agent-card student-agent-card--portrait" key={student.id}>
+                <div className="student-agent-card__figure">
+                  <div className={`student-status-bubble student-status-bubble--${pose}`}>{statusText}</div>
+                  <StudentPortrait
+                    name={student.name}
+                    pose={pose}
+                    paletteIndex={index}
+                    label={studentMoodLabel(pose)}
+                  />
+                </div>
+                <div className="student-agent-card__body">
                   <div className="student-agent-card__head">
-                    <div className={`agent-face agent-face--${index % 6}`}>{student.name.slice(-1)}</div>
                     <div>
                       <strong>{student.name}</strong>
                       <span>{student.avatar}</span>
@@ -231,73 +341,76 @@ export function TrainingRoom({
                     <span className="mini-live">Live</span>
                   </div>
                   <div className="agent-bars">
-                    <label>注意力 <meter value={student.attention} max={100} /></label>
-                    <label>理解度 <meter value={student.comprehension} max={100} /></label>
-                    <label>参与度 <meter value={student.participation} max={100} /></label>
+                    <label>注意力 <meter value={runtime?.attention ?? student.attention} max={100} /></label>
+                    <label>理解度 <meter value={runtime?.comprehension ?? student.comprehension} max={100} /></label>
+                    <label>参与度 <meter value={runtime?.participation ?? student.participation} max={100} /></label>
                   </div>
-                  <p>{lastEvent?.content ?? student.behaviorStyle}</p>
-                </article>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="pulse-panel screen-card">
-          <div className="screen-card__title">
-            <span>课堂脉搏</span>
-          </div>
-          <div className="pulse-rings">
-            <div className={`pulse-ring ${metricColor(metrics.attention)}`}>
-              <strong>{metrics.attention}%</strong>
-              <span>注意力</span>
-            </div>
-            <div className={`pulse-ring ${metricColor(metrics.confusion, true)}`}>
-              <strong>{metrics.confusion}%</strong>
-              <span>困惑度</span>
-            </div>
-            <div className={`pulse-ring ${metricColor(metrics.interaction)}`}>
-              <strong>{metrics.interaction}%</strong>
-              <span>互动度</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="radar-panel screen-card">
-          <div className="screen-card__title">
-            <span>教师表现雷达</span>
-          </div>
-          <ResponsiveContainer width="100%" height={190}>
-            <RadarChart data={radarData}>
-              <PolarGrid stroke="#284257" />
-              <PolarAngleAxis dataKey="metric" tick={{ fill: "#9fb7c8", fontSize: 12 }} />
-              <Radar dataKey="value" stroke="#4bd8c8" fill="#4bd8c8" fillOpacity={0.35} isAnimationActive={false} />
-            </RadarChart>
-          </ResponsiveContainer>
-        </div>
-
-        <div className="timeline-panel screen-card">
-          <div className="screen-card__title">
-            <span>课堂时间线</span>
-          </div>
-          <div className="timeline">
-            {timeline.map((event) => (
-              <div className="timeline-item" key={event.id}>
-                <span>{new Date(event.timestamp).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</span>
-                <strong>{event.actor}</strong>
-                <p>{event.content}</p>
-              </div>
+                  <p>{lastLine}</p>
+                  <small>{runtime?.memory.length ? `课堂记忆：${runtime.memory[runtime.memory.length - 1]}` : lastEvent ? `最近状态：${lastEvent.type}` : student.strategy}</small>
+                </div>
+              </article>
             ))}
-            {!timeline.length ? <div className="empty-state">暂无课堂事件，发送第一句教师发言后开始记录。</div> : null}
           </div>
-        </div>
+        </section>
 
-        <div className="suggestion-panel screen-card">
-          <div className="screen-card__title">
-            <span>即时教学建议</span>
+        <aside className="insight-rail">
+          <div className="pulse-panel screen-card">
+            <div className="screen-card__title">
+              <span>课堂脉搏</span>
+            </div>
+            <div className="pulse-rings">
+              <div className={`pulse-ring ${metricColor(metrics.attention)}`}>
+                <strong>{metrics.attention}%</strong>
+                <span>注意力</span>
+              </div>
+              <div className={`pulse-ring ${metricColor(metrics.confusion, true)}`}>
+                <strong>{metrics.confusion}%</strong>
+                <span>困惑度</span>
+              </div>
+              <div className={`pulse-ring ${metricColor(metrics.interaction)}`}>
+                <strong>{metrics.interaction}%</strong>
+                <span>互动度</span>
+              </div>
+            </div>
           </div>
-          <p>{latestSuggestion}</p>
-        </div>
+
+          <div className="radar-panel screen-card">
+            <div className="screen-card__title">
+              <span>教师表现雷达</span>
+            </div>
+            <ResponsiveContainer width="100%" height={190}>
+              <RadarChart data={radarData}>
+                <PolarGrid stroke="#284257" />
+                <PolarAngleAxis dataKey="metric" tick={{ fill: "#9fb7c8", fontSize: 12 }} />
+                <Radar dataKey="value" stroke="#4bd8c8" fill="#4bd8c8" fillOpacity={0.35} isAnimationActive={false} />
+              </RadarChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="suggestion-panel screen-card">
+            <div className="screen-card__title">
+              <span>即时教学建议</span>
+            </div>
+            <p>{latestSuggestion}</p>
+          </div>
+          <div className="timeline-panel screen-card">
+            <div className="screen-card__title">
+              <span>课堂时间线</span>
+            </div>
+            <div className="timeline">
+              {timeline.map((event) => (
+                <div className="timeline-item" key={event.id}>
+                  <span>{new Date(event.timestamp).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</span>
+                  <strong>{event.actor}</strong>
+                  <p>{event.content}</p>
+                </div>
+              ))}
+              {!timeline.length ? <div className="empty-state">暂无课堂事件，发送第一句教师发言后开始记录。</div> : null}
+            </div>
+          </div>
+        </aside>
       </section>
+
     </main>
   );
 }

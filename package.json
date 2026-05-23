@@ -11,9 +11,11 @@
     "build:server": "tsc -p tsconfig.server.json",
     "build:client": "vite build",
     "start": "node dist/server/server/index.js",
+    "test:agent-runtime": "tsx scripts/agent-runtime-contract.ts",
+    "test:ui": "node scripts/ui-contract.mjs",
     "test:provider": "node scripts/provider-contract.mjs",
     "smoke": "node scripts/smoke.mjs",
-    "check": "npm run typecheck && npm run build && npm run test:provider && npm run smoke",
+    "check": "npm run typecheck && npm run build && npm run test:agent-runtime && npm run test:ui && npm run test:provider && npm run smoke",
     "electron": "echo Electron shell is scaffolded in ./electron and can be wired after web validation.",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

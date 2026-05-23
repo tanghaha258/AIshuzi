@@ -38,6 +38,28 @@ export interface StudentAgent {
   createdAt: string;
 }
 
+export type StudentRuntimePose =
+  | "listening"
+  | "smiling"
+  | "thinking"
+  | "confused"
+  | "distracted"
+  | "challenging";
+
+export interface StudentRuntimeState {
+  sessionId: string;
+  studentId: string;
+  attention: number;
+  comprehension: number;
+  participation: number;
+  emotion: string;
+  pose: StudentRuntimePose;
+  statusText: string;
+  memory: string[];
+  lastSpokeAt?: string;
+  updatedAt: string;
+}
+
 export interface Course {
   id: string;
   title: string;

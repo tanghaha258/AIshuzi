@@ -21,6 +21,7 @@ import type {
   DashboardData,
   EvaluationReport,
   StudentAgent,
+  StudentRuntimeState,
   TrainingSession
 } from "../shared/types";
 
@@ -64,6 +65,7 @@ export default function App() {
   const [data, setData] = useState<DashboardData>(emptyData);
   const [activeSession, setActiveSession] = useState<TrainingSession | null>(null);
   const [activeEvents, setActiveEvents] = useState<ClassroomEvent[]>([]);
+  const [activeRuntimeStates, setActiveRuntimeStates] = useState<StudentRuntimeState[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -105,6 +107,7 @@ export default function App() {
     const result = await api.getSession(sessionId);
     setActiveSession(result.session);
     setActiveEvents(result.events);
+    setActiveRuntimeStates(result.runtimeStates);
     navigate("training");
   }
 
@@ -211,6 +214,7 @@ export default function App() {
             session={activeSession}
             students={selectedStudents}
             initialEvents={activeEvents}
+            initialRuntimeStates={activeRuntimeStates}
             onSessionChange={handleSessionChange}
             onReport={handleReport}
           />
