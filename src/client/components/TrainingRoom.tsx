@@ -90,6 +90,41 @@ function studentMoodLabel(pose: StudentPose) {
   }
 }
 
+function eventTypeLabel(type: ClassroomEvent["type"]) {
+  switch (type) {
+    case "teacher_utterance":
+      return "教师发言";
+    case "student_response":
+      return "学生回应";
+    case "student_question":
+      return "学生提问";
+    case "student_distraction":
+      return "走神信号";
+    case "student_state_change":
+      return "状态变化";
+    case "system_suggestion":
+      return "教学建议";
+    case "teacher_observation":
+      return "教师观察";
+    case "transcript_segment":
+      return "语音转写";
+    case "report_evidence":
+      return "报告证据";
+    default:
+      return "课堂事件";
+  }
+}
+
+function timelineStatus(event: ClassroomEvent) {
+  const statusText = event.metadata?.statusText;
+  if (typeof statusText === "string" && statusText) return statusText;
+  const pose = event.metadata?.pose;
+  if (typeof pose === "string") return studentMoodLabel(pose as StudentPose);
+  if (event.type === "system_suggestion") return "建议已生成";
+  if (event.type === "teacher_utterance") return "已记录";
+  return "已同步";
+}
+
 export function TrainingRoom({
   session,
   students,
@@ -308,6 +343,48 @@ export function TrainingRoom({
               </button>
             </div>
           </div>
+
+          <div className="teacher-feedback-stack">
+            <div className="suggestion-panel screen-card">
+              <div className="screen-card__title">
+                <span>即时教学建议</span>
+              </div>
+              <p>{latestSuggestion}</p>
+            </div>
+
+            <div className="pulse-panel screen-card">
+              <div className="screen-card__title">
+                <span>课堂脉搏</span>
+              </div>
+              <div className="pulse-rings">
+                <div className={`pulse-ring ${metricColor(metrics.attention)}`}>
+                  <strong>{metrics.attention}%</strong>
+                  <span>注意力</span>
+                </div>
+                <div className={`pulse-ring ${metricColor(metrics.confusion, true)}`}>
+                  <strong>{metrics.confusion}%</strong>
+                  <span>困惑度</span>
+                </div>
+                <div className={`pulse-ring ${metricColor(metrics.interaction)}`}>
+                  <strong>{metrics.interaction}%</strong>
+                  <span>互动度</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="radar-panel screen-card">
+              <div className="screen-card__title">
+                <span>教师表现雷达</span>
+              </div>
+              <ResponsiveContainer width="100%" height={190}>
+                <RadarChart data={radarData}>
+                  <PolarGrid stroke="#284257" />
+                  <PolarAngleAxis dataKey="metric" tick={{ fill: "#9fb7c8", fontSize: 12 }} />
+                  <Radar dataKey="value" stroke="#4bd8c8" fill="#4bd8c8" fillOpacity={0.35} isAnimationActive={false} />
+                </RadarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
         </div>
 
         <section className="student-stage screen-card">
@@ -358,62 +435,39 @@ export function TrainingRoom({
           </div>
         </section>
 
-        <aside className="insight-rail">
-          <div className="pulse-panel screen-card">
-            <div className="screen-card__title">
-              <span>课堂脉搏</span>
-            </div>
-            <div className="pulse-rings">
-              <div className={`pulse-ring ${metricColor(metrics.attention)}`}>
-                <strong>{metrics.attention}%</strong>
-                <span>注意力</span>
-              </div>
-              <div className={`pulse-ring ${metricColor(metrics.confusion, true)}`}>
-                <strong>{metrics.confusion}%</strong>
-                <span>困惑度</span>
-              </div>
-              <div className={`pulse-ring ${metricColor(metrics.interaction)}`}>
-                <strong>{metrics.interaction}%</strong>
-                <span>互动度</span>
-              </div>
-            </div>
+        <section className="insight-rail timeline-panel timeline-panel--wide screen-card">
+          <div className="screen-card__title">
+            <span>课堂时间线</span>
           </div>
-
-          <div className="radar-panel screen-card">
-            <div className="screen-card__title">
-              <span>教师表现雷达</span>
+          {timeline.length ? (
+            <div className="timeline-table__content">
+              <table className="timeline-table">
+                <thead>
+                  <tr>
+                    <th>时间</th>
+                    <th>类型</th>
+                    <th>角色</th>
+                    <th>内容</th>
+                    <th>状态</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {timeline.map((event) => (
+                    <tr key={event.id}>
+                      <td>{new Date(event.timestamp).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</td>
+                      <td>{eventTypeLabel(event.type)}</td>
+                      <td>{event.actor}</td>
+                      <td>{event.content}</td>
+                      <td><span className="timeline-status">{timelineStatus(event)}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            <ResponsiveContainer width="100%" height={190}>
-              <RadarChart data={radarData}>
-                <PolarGrid stroke="#284257" />
-                <PolarAngleAxis dataKey="metric" tick={{ fill: "#9fb7c8", fontSize: 12 }} />
-                <Radar dataKey="value" stroke="#4bd8c8" fill="#4bd8c8" fillOpacity={0.35} isAnimationActive={false} />
-              </RadarChart>
-            </ResponsiveContainer>
-          </div>
-
-          <div className="suggestion-panel screen-card">
-            <div className="screen-card__title">
-              <span>即时教学建议</span>
-            </div>
-            <p>{latestSuggestion}</p>
-          </div>
-          <div className="timeline-panel screen-card">
-            <div className="screen-card__title">
-              <span>课堂时间线</span>
-            </div>
-            <div className="timeline">
-              {timeline.map((event) => (
-                <div className="timeline-item" key={event.id}>
-                  <span>{new Date(event.timestamp).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</span>
-                  <strong>{event.actor}</strong>
-                  <p>{event.content}</p>
-                </div>
-              ))}
-              {!timeline.length ? <div className="empty-state">暂无课堂事件，发送第一句教师发言后开始记录。</div> : null}
-            </div>
-          </div>
-        </aside>
+          ) : (
+            <div className="empty-state">暂无课堂事件，发送第一句教师发言后开始记录。</div>
+          )}
+        </section>
       </section>
 
     </main>

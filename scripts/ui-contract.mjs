@@ -11,6 +11,11 @@ const requiredTrainingRoomSelectors = [
   ".student-stage__grid",
   ".student-stage__deck",
   ".insight-rail",
+  ".teacher-feedback-stack",
+  ".timeline-panel--wide",
+  ".timeline-table",
+  ".timeline-table__content",
+  ".timeline-status",
   ".student-agent-card--portrait",
   ".student-agent-card__body",
   ".student-agent-card__metrics",
@@ -45,8 +50,16 @@ const layoutAssertions = [
     ok: /\.student-stage\s*{[^}]*grid-area:\s*stage/s.test(css)
   },
   {
+    name: "timeline owns its dedicated bottom area",
+    ok: /\.timeline-panel--wide\s*{[^}]*grid-area:\s*timeline/s.test(css)
+  },
+  {
     name: "student deck uses responsive auto-fit cards",
     ok: /\.student-stage__deck\s*{[^}]*auto-fit/s.test(css)
+  },
+  {
+    name: "teacher column is a scrollable feedback stack",
+    ok: /\.teacher-column\s*{[^}]*overflow:\s*auto/s.test(css)
   }
 ];
 
