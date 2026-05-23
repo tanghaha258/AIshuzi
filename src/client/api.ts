@@ -62,5 +62,10 @@ export const api = {
     request<{ ok: boolean; message: string }>("/api/model-provider/test", {
       method: "POST",
       body: JSON.stringify(payload)
+    }),
+  testModelScenario: (payload: Partial<ModelProviderConfig>, scenario: "student-turn" | "lesson-plan" | "report") =>
+    request<{ ok: boolean; message: string; sample?: Record<string, unknown> }>("/api/model-provider/scenario-test", {
+      method: "POST",
+      body: JSON.stringify({ ...payload, scenario })
     })
 };

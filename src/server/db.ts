@@ -10,6 +10,7 @@ import type {
   StudentAgent,
   TrainingSession
 } from "../shared/types.js";
+import { createDeepSeekDefaultProvider, isLegacyOpenAiDefaultProvider } from "../shared/providerDefaults.js";
 import { runMigrations } from "./db/migrations.js";
 
 const dataDir = path.resolve(process.cwd(), "data");
@@ -269,10 +270,23 @@ function seedDefaults() {
 
   const providerCount = db.prepare("SELECT COUNT(*) AS total FROM model_providers").get() as { total: number };
   if (providerCount.total === 0) {
+    const provider = createDeepSeekDefaultProvider();
     db.prepare(`
       INSERT INTO model_providers (id, provider, base_url, api_key, model, temperature, enabled, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(randomUUID(), "OpenAI Compatible", "https://api.openai.com/v1", "", "gpt-4o-mini", 0.7, 0, now());
+    `).run(randomUUID(), provider.provider, provider.baseURL, provider.apiKey, provider.model, provider.temperature, provider.enabled ? 1 : 0, now());
+    return;
+  }
+
+  const currentProviderRow = db.prepare("SELECT * FROM model_providers ORDER BY updated_at DESC LIMIT 1").get() as Record<string, unknown>;
+  const currentProvider = rowToProvider(currentProviderRow);
+  if (isLegacyOpenAiDefaultProvider(currentProvider)) {
+    const provider = createDeepSeekDefaultProvider();
+    db.prepare(`
+      UPDATE model_providers
+      SET provider = ?, base_url = ?, model = ?, temperature = ?, enabled = ?, updated_at = ?
+      WHERE id = ?
+    `).run(provider.provider, provider.baseURL, provider.model, provider.temperature, 0, now(), currentProvider.id);
   }
 }
 

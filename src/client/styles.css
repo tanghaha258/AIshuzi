@@ -851,6 +851,29 @@ meter::-webkit-meter-optimum-value {
   font-weight: 700;
 }
 
+.settings-actions,
+.model-scenario-tests {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 10px 0;
+}
+
+.model-test-output {
+  max-height: 260px;
+  overflow: auto;
+  margin: 12px 0 0;
+  padding: 12px;
+  color: #dcecef;
+  background: #10202a;
+  border-radius: var(--radius);
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
 .boot-screen {
   min-height: 100vh;
   display: grid;

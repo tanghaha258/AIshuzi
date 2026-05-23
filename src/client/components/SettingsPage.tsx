@@ -1,7 +1,8 @@
-import { Database, Loader2, PlugZap, Save, Wifi } from "lucide-react";
+import { BrainCircuit, Database, FileSearch, Loader2, PlugZap, RotateCcw, Save, Wifi } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import type { DashboardData, ModelProviderConfig } from "../../shared/types";
+import { createDeepSeekDefaultProvider, deepSeekRecommendedModels } from "../../shared/providerDefaults";
 
 interface SettingsPageProps {
   data: DashboardData;
@@ -11,7 +12,9 @@ export function SettingsPage({ data }: SettingsPageProps) {
   const [config, setConfig] = useState<ModelProviderConfig | null>(null);
   const [saved, setSaved] = useState("");
   const [testing, setTesting] = useState(false);
+  const [scenarioTesting, setScenarioTesting] = useState<"student-turn" | "lesson-plan" | "report" | "">("");
   const [testMessage, setTestMessage] = useState("");
+  const [scenarioMessage, setScenarioMessage] = useState("");
 
   useEffect(() => {
     api.getModelProvider().then(setConfig).catch(() => undefined);
@@ -35,6 +38,32 @@ export function SettingsPage({ data }: SettingsPageProps) {
     } finally {
       setTesting(false);
     }
+  }
+
+  async function testScenario(scenario: "student-turn" | "lesson-plan" | "report") {
+    if (!config) return;
+    setScenarioTesting(scenario);
+    setScenarioMessage("");
+    try {
+      const result = await api.testModelScenario(config, scenario);
+      const sample = result.sample ? `\n${JSON.stringify(result.sample, null, 2)}` : "";
+      setScenarioMessage(`${result.message}${sample}`);
+    } finally {
+      setScenarioTesting("");
+    }
+  }
+
+  function fillDeepSeekDefaults() {
+    const defaults = createDeepSeekDefaultProvider();
+    setConfig((current) => ({
+      ...defaults,
+      id: current?.id ?? defaults.id,
+      apiKey: current?.apiKey ?? defaults.apiKey,
+      enabled: current?.enabled ?? defaults.enabled,
+      updatedAt: current?.updatedAt ?? defaults.updatedAt
+    }));
+    setSaved("已填入 DeepSeek 默认配置");
+    window.setTimeout(() => setSaved(""), 1800);
   }
 
   return (
@@ -91,16 +120,40 @@ export function SettingsPage({ data }: SettingsPageProps) {
                 启用真实大模型生成
               </label>
             </div>
-            <button className="primary-button" type="button" onClick={saveConfig}>
-              <Save size={17} />
-              保存配置
-            </button>
-            <button className="ghost-button" type="button" onClick={testConfig} disabled={testing}>
-              {testing ? <Loader2 className="spin" size={17} /> : <Wifi size={17} />}
-              测试连接
-            </button>
+            <p className="muted-text">
+              DeepSeek 默认地址为 https://api.deepseek.com，推荐模型：{deepSeekRecommendedModels.join(" / ")}。
+            </p>
+            <div className="settings-actions">
+              <button className="primary-button" type="button" onClick={saveConfig}>
+                <Save size={17} />
+                保存配置
+              </button>
+              <button className="ghost-button" type="button" onClick={testConfig} disabled={testing}>
+                {testing ? <Loader2 className="spin" size={17} /> : <Wifi size={17} />}
+                测试连接
+              </button>
+              <button className="ghost-button" type="button" onClick={fillDeepSeekDefaults}>
+                <RotateCcw size={17} />
+                DeepSeek 快填
+              </button>
+            </div>
             {saved ? <span className="save-notice">{saved}</span> : null}
             {testMessage ? <span className="save-notice">{testMessage}</span> : null}
+            <div className="model-scenario-tests">
+              <button className="ghost-button" type="button" onClick={() => testScenario("student-turn")} disabled={Boolean(scenarioTesting)}>
+                {scenarioTesting === "student-turn" ? <Loader2 className="spin" size={17} /> : <BrainCircuit size={17} />}
+                AI学生回应测试
+              </button>
+              <button className="ghost-button" type="button" onClick={() => testScenario("lesson-plan")} disabled={Boolean(scenarioTesting)}>
+                {scenarioTesting === "lesson-plan" ? <Loader2 className="spin" size={17} /> : <PlugZap size={17} />}
+                备课生成测试
+              </button>
+              <button className="ghost-button" type="button" onClick={() => testScenario("report")} disabled={Boolean(scenarioTesting)}>
+                {scenarioTesting === "report" ? <Loader2 className="spin" size={17} /> : <FileSearch size={17} />}
+                报告生成测试
+              </button>
+            </div>
+            {scenarioMessage ? <pre className="model-test-output">{scenarioMessage}</pre> : null}
           </>
         ) : (
           <div className="empty-state">正在读取模型配置...</div>

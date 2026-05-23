@@ -1,4 +1,6 @@
 import type { ModelProviderConfig, StudentAgent, TrainingSession } from "../../shared/types.js";
+import { parseJsonObject } from "./json.js";
+import { buildStudentTurnPrompt } from "./prompts.js";
 
 export interface GenerateStudentContext {
   session: TrainingSession;
@@ -23,15 +25,26 @@ export interface ChatMessage {
   content: string;
 }
 
+export interface ChatCompletionOptions {
+  maxTokens?: number;
+  json?: boolean;
+  stream?: boolean;
+  extraBody?: Record<string, unknown>;
+}
+
 function cleanBaseUrl(baseURL: string) {
   return baseURL.replace(/\/$/, "");
+}
+
+function chatCompletionUrl(config: ModelProviderConfig) {
+  return `${cleanBaseUrl(config.baseURL)}/chat/completions`;
 }
 
 export function validateProviderConfig(config: ModelProviderConfig) {
   if (!config.enabled) {
     return { ok: false, message: "当前未启用真实大模型生成，系统会使用本地模拟引擎。" };
   }
-  if (!config.apiKey) {
+  if (!config.apiKey || config.apiKey === "********") {
     return { ok: false, message: "请先填写 API Key；未配置时系统会使用本地模拟引擎。" };
   }
   if (!config.baseURL) {
@@ -43,36 +56,97 @@ export function validateProviderConfig(config: ModelProviderConfig) {
   return { ok: true, message: "模型配置字段完整。" };
 }
 
-export async function callChatCompletion(
+export function buildChatCompletionPayload(
   config: ModelProviderConfig,
   messages: ChatMessage[],
-  options: { maxTokens?: number } = {}
+  options: ChatCompletionOptions = {}
 ) {
+  const payload: Record<string, unknown> = {
+    model: config.model,
+    temperature: config.temperature,
+    messages
+  };
+
+  if (typeof options.maxTokens === "number") {
+    payload.max_tokens = options.maxTokens;
+  }
+  if (options.json) {
+    payload.response_format = { type: "json_object" };
+  }
+  if (options.stream) {
+    payload.stream = true;
+  }
+  if (options.extraBody) {
+    Object.assign(payload, options.extraBody);
+  }
+
+  return payload;
+}
+
+async function readProviderError(response: Response) {
+  const body = await response.text().catch(() => "");
+  if (!body) return "";
+  try {
+    const parsed = JSON.parse(body) as { error?: { message?: string }; message?: string };
+    return parsed.error?.message ?? parsed.message ?? body.slice(0, 240);
+  } catch {
+    return body.slice(0, 240);
+  }
+}
+
+function describeProviderError(status: number, detail: string) {
+  const suffix = detail ? `（${detail}）` : "";
+  if (status === 401 || status === 403) return `模型接口鉴权失败，请检查 API Key。${suffix}`;
+  if (status === 402) return `模型账户余额或额度不足。${suffix}`;
+  if (status === 404) return `模型接口地址或模型名称不可用，请检查 Base URL 和模型名。${suffix}`;
+  if (status === 429) return `模型接口请求过于频繁，请稍后重试。${suffix}`;
+  if (status >= 500) return `模型服务暂时不可用，请稍后重试。${suffix}`;
+  return `模型接口返回 ${status}。${suffix}`;
+}
+
+async function postChatCompletion(config: ModelProviderConfig, payload: Record<string, unknown>) {
   const validation = validateProviderConfig(config);
   if (!validation.ok) {
     throw new Error(validation.message);
   }
 
-  const response = await fetch(`${cleanBaseUrl(config.baseURL)}/chat/completions`, {
+  const response = await fetch(chatCompletionUrl(config), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${config.apiKey}`
     },
-    body: JSON.stringify({
-      model: config.model,
-      temperature: config.temperature,
-      max_tokens: options.maxTokens,
-      messages
-    })
+    body: JSON.stringify(payload)
   });
 
   if (!response.ok) {
-    throw new Error(`模型接口返回 ${response.status}`);
+    throw new Error(describeProviderError(response.status, await readProviderError(response)));
   }
 
+  return response;
+}
+
+export async function callChatCompletion(
+  config: ModelProviderConfig,
+  messages: ChatMessage[],
+  options: ChatCompletionOptions = {}
+) {
+  const response = await postChatCompletion(config, buildChatCompletionPayload(config, messages, options));
   const payload = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
-  return payload.choices?.[0]?.message?.content ?? "";
+  const content = payload.choices?.[0]?.message?.content ?? "";
+  if (options.json && !content.trim()) {
+    throw new Error("模型返回空内容，请重试。");
+  }
+  return content;
+}
+
+export async function callJsonCompletion<T extends Record<string, unknown>>(
+  config: ModelProviderConfig,
+  messages: ChatMessage[],
+  options: Omit<ChatCompletionOptions, "json" | "stream"> = {}
+): Promise<T> {
+  const content = await callChatCompletion(config, messages, { ...options, json: true });
+  return parseJsonObject(content) as T;
 }
 
 export async function streamChatCompletion(
@@ -80,27 +154,9 @@ export async function streamChatCompletion(
   messages: ChatMessage[],
   onToken: (token: string) => void
 ) {
-  const validation = validateProviderConfig(config);
-  if (!validation.ok) {
-    throw new Error(validation.message);
-  }
-
-  const response = await fetch(`${cleanBaseUrl(config.baseURL)}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${config.apiKey}`
-    },
-    body: JSON.stringify({
-      model: config.model,
-      temperature: config.temperature,
-      stream: true,
-      messages
-    })
-  });
-
-  if (!response.ok || !response.body) {
-    throw new Error(`模型流式接口返回 ${response.status}`);
+  const response = await postChatCompletion(config, buildChatCompletionPayload(config, messages, { stream: true }));
+  if (!response.body) {
+    throw new Error("模型流式接口没有返回可读取的数据。");
   }
 
   const decoder = new TextDecoder();
@@ -161,18 +217,27 @@ function fallbackSuggestion(messages: AiStudentMessage[]) {
   return "课堂互动状态稳定。建议继续保持短讲解加短提问的节奏，并邀请低参与学生复述关键步骤。";
 }
 
-function parseJsonPayload(raw: string): AiSuggestionResult | undefined {
-  const match = raw.match(/\{[\s\S]*\}/);
-  if (!match) return undefined;
-  try {
-    const parsed = JSON.parse(match[0]) as AiSuggestionResult;
-    if (Array.isArray(parsed.messages) && typeof parsed.suggestion === "string") {
-      return parsed;
-    }
-  } catch {
-    return undefined;
+function normalizeStudentTurnResult(raw: Record<string, unknown>, students: StudentAgent[]): AiSuggestionResult {
+  const allowedIds = new Set(students.map((student) => student.id));
+  const rawMessages = Array.isArray(raw.messages) ? raw.messages : [];
+  const messages = rawMessages
+    .filter((message): message is Record<string, unknown> => Boolean(message) && typeof message === "object")
+    .filter((message) => allowedIds.has(String(message.studentId)))
+    .slice(0, 4)
+    .map((message) => ({
+      studentId: String(message.studentId),
+      studentName: String(message.studentName || "AI学生"),
+      content: String(message.content || "").slice(0, 160),
+      mood: String(message.mood || "回应")
+    }))
+    .filter((message) => message.content);
+
+  const suggestion = typeof raw.suggestion === "string" ? raw.suggestion.slice(0, 220) : "";
+  if (!suggestion || messages.length === 0) {
+    throw new Error("模型 JSON 缺少可用的学生回应或教学建议。");
   }
-  return undefined;
+
+  return { messages, suggestion };
 }
 
 export async function generateAiStudentTurn(
@@ -190,61 +255,12 @@ export async function generateAiStudentTurn(
     };
   }
 
-  const prompt = [
-    "你是一个师范生微格教学实训平台里的课堂模拟引擎。",
-    "请基于教师发言和学生画像，生成 2-4 个 AI学生的真实课堂反应，并给教师一条即时教学策略建议。",
-    "必须只输出 JSON，格式：",
-    '{"messages":[{"studentId":"...","studentName":"...","content":"...","mood":"..."}],"suggestion":"..."}',
-    `课程：${context.session.courseTitle}`,
-    `主题：${context.session.topic}`,
-    `教师发言：${context.teacherText}`,
-    `学生画像：${JSON.stringify(
-      context.students.map((student) => ({
-        studentId: student.id,
-        studentName: student.name,
-        personality: student.personality,
-        foundation: student.foundation,
-        attention: student.attention,
-        comprehension: student.comprehension,
-        participation: student.participation,
-        behaviorStyle: student.behaviorStyle,
-        status: student.status
-      }))
-    )}`
-  ].join("\n");
-
   try {
-    const content = await callChatCompletion(config, [
-      {
-        role: "system",
-        content: "你擅长模拟不同性格和基础水平的中小学生课堂表现。输出必须是可解析 JSON。"
-      },
-      { role: "user", content: prompt }
-    ]);
-    const parsed = parseJsonPayload(content);
-    if (!parsed) {
-      throw new Error("Model response is not valid JSON.");
-    }
-    const allowedIds = new Set(context.students.map((student) => student.id));
-    const messages = parsed.messages
-      .filter((message) => allowedIds.has(message.studentId))
-      .slice(0, 4)
-      .map((message) => ({
-        ...message,
-        content: message.content.slice(0, 160),
-        mood: message.mood || "回应"
-      }));
-
-    if (messages.length === 0) {
-      throw new Error("Model returned no usable student messages.");
-    }
-
+    const prompt = buildStudentTurnPrompt(context);
+    const raw = await callJsonCompletion<Record<string, unknown>>(config, prompt.messages, { maxTokens: prompt.maxTokens });
     return {
       usedModel: true,
-      result: {
-        messages,
-        suggestion: parsed.suggestion.slice(0, 220)
-      }
+      result: normalizeStudentTurnResult(raw, context.students)
     };
   } catch {
     const messages = context.students.slice(0, 3).map((student, index) => fallbackMessage(student, context.teacherText, index));

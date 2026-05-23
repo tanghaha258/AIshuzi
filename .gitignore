@@ -7,3 +7,4 @@ data/*.db-wal
 .env.local
 npm-debug.log*
 output/
+.playwright-cli/

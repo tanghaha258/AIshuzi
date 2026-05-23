@@ -61,6 +61,22 @@ async function run() {
     throw new Error("Seed data missing from dashboard.");
   }
 
+  const provider = await json(`${baseUrl}/api/model-provider`);
+  if (provider.provider !== "DeepSeek" || provider.baseURL !== "https://api.deepseek.com") {
+    throw new Error("Default model provider is not DeepSeek.");
+  }
+
+  const scenario = await json(`${baseUrl}/api/model-provider/scenario-test`, {
+    method: "POST",
+    body: JSON.stringify({
+      ...provider,
+      scenario: "student-turn"
+    })
+  });
+  if (scenario.ok !== false || !scenario.message.includes("未启用")) {
+    throw new Error("Scenario test did not provide a clear no-key fallback message.");
+  }
+
   const session = await json(`${baseUrl}/api/sessions`, {
     method: "POST",
     body: JSON.stringify({

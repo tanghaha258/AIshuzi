@@ -4,7 +4,8 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { initDb, store } from "./db.js";
-import { callChatCompletion, generateAiStudentTurn, streamChatCompletion, validateProviderConfig } from "./ai/provider.js";
+import { callChatCompletion, callJsonCompletion, generateAiStudentTurn, streamChatCompletion, validateProviderConfig } from "./ai/provider.js";
+import { buildProviderScenarioPrompt, type ProviderScenario } from "./ai/prompts.js";
 import { buildTurnEvents, calculateMetrics, createReport } from "./domain/simulation.js";
 import type { CreateCoursePayload, CreateSessionPayload, UpsertModelProviderPayload } from "../shared/types.js";
 
@@ -19,6 +20,19 @@ app.use(express.json({ limit: "1mb" }));
 
 function requireString(value: unknown, fallback = "") {
   return typeof value === "string" ? value.trim() : fallback;
+}
+
+function providerConfigFromBody(body: Partial<UpsertModelProviderPayload>, current = store.getProvider()) {
+  const rawApiKey = requireString(body.apiKey, current.apiKey);
+  return {
+    ...current,
+    provider: requireString(body.provider, current.provider),
+    baseURL: requireString(body.baseURL, current.baseURL),
+    apiKey: rawApiKey === "********" ? current.apiKey : rawApiKey,
+    model: requireString(body.model, current.model),
+    temperature: Number(body.temperature ?? current.temperature),
+    enabled: Boolean(body.enabled)
+  };
 }
 
 app.get("/api/health", (_req, res) => {
@@ -217,18 +231,8 @@ app.post("/api/model-provider", (req, res) => {
 });
 
 app.post("/api/model-provider/test", async (req, res) => {
-  const current = store.getProvider();
   const body = req.body as Partial<UpsertModelProviderPayload>;
-  const rawApiKey = requireString(body.apiKey, current.apiKey);
-  const config = {
-    ...current,
-    provider: requireString(body.provider, current.provider),
-    baseURL: requireString(body.baseURL, current.baseURL),
-    apiKey: rawApiKey === "********" ? current.apiKey : rawApiKey,
-    model: requireString(body.model, current.model),
-    temperature: Number(body.temperature ?? current.temperature),
-    enabled: Boolean(body.enabled)
-  };
+  const config = providerConfigFromBody(body);
   const validation = validateProviderConfig(config);
   if (!validation.ok) {
     res.json({ ok: false, message: validation.message });
@@ -246,6 +250,29 @@ app.post("/api/model-provider/test", async (req, res) => {
     res.json({ ok: true, message: reply || "模型连接正常。" });
   } catch (error) {
     res.json({ ok: false, message: error instanceof Error ? error.message : "模型连接测试失败。" });
+  }
+});
+
+app.post("/api/model-provider/scenario-test", async (req, res) => {
+  const scenario = requireString(req.body?.scenario) as ProviderScenario;
+  if (!["student-turn", "lesson-plan", "report"].includes(scenario)) {
+    res.status(400).json({ ok: false, message: "未知模型测试场景。" });
+    return;
+  }
+
+  const config = providerConfigFromBody(req.body as Partial<UpsertModelProviderPayload>);
+  const validation = validateProviderConfig(config);
+  if (!validation.ok) {
+    res.json({ ok: false, message: validation.message });
+    return;
+  }
+
+  try {
+    const prompt = buildProviderScenarioPrompt(scenario);
+    const sample = await callJsonCompletion<Record<string, unknown>>(config, prompt.messages, { maxTokens: prompt.maxTokens });
+    res.json({ ok: true, message: prompt.successMessage, sample });
+  } catch (error) {
+    res.json({ ok: false, message: error instanceof Error ? error.message : "模型场景测试失败。" });
   }
 });
 
