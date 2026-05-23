@@ -9,13 +9,13 @@ import {
   Settings,
   Sparkles
 } from "lucide-react";
-import { api } from "./api";
 import { CoursePlannerPage } from "./components/CoursePlannerPage";
 import { Dashboard } from "./components/Dashboard";
 import { ReportsPage } from "./components/ReportsPage";
 import { SettingsPage } from "./components/SettingsPage";
 import { StudentsPage } from "./components/StudentsPage";
 import { TrainingRoom } from "./components/TrainingRoom";
+import { api } from "./api";
 import type {
   ClassroomEvent,
   DashboardData,
@@ -169,7 +169,7 @@ export default function App() {
           <Sparkles size={24} />
           <div>
             <strong>AI数字学生</strong>
-            <span>微格实训平台</span>
+            <span>课堂微格实训平台</span>
           </div>
         </div>
         <nav>

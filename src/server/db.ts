@@ -10,6 +10,7 @@ import type {
   StudentAgent,
   TrainingSession
 } from "../shared/types.js";
+import { runMigrations } from "./db/migrations.js";
 
 const dataDir = path.resolve(process.cwd(), "data");
 const databasePath = process.env.DATABASE_PATH
@@ -123,74 +124,7 @@ function rowToProvider(row: Record<string, unknown>): ModelProviderConfig {
 }
 
 export function initDb() {
-  db.exec(`
-    PRAGMA journal_mode = WAL;
-    CREATE TABLE IF NOT EXISTS courses (
-      id TEXT PRIMARY KEY,
-      title TEXT NOT NULL,
-      subject TEXT NOT NULL,
-      grade TEXT NOT NULL,
-      objectives TEXT NOT NULL,
-      topic TEXT NOT NULL,
-      duration_minutes INTEGER NOT NULL,
-      created_at TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS students (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      avatar TEXT NOT NULL,
-      personality TEXT NOT NULL,
-      foundation INTEGER NOT NULL,
-      attention INTEGER NOT NULL,
-      comprehension INTEGER NOT NULL,
-      participation INTEGER NOT NULL,
-      behavior_style TEXT NOT NULL,
-      status TEXT NOT NULL,
-      strategy TEXT NOT NULL,
-      created_at TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS sessions (
-      id TEXT PRIMARY KEY,
-      course_id TEXT NOT NULL,
-      course_title TEXT NOT NULL,
-      topic TEXT NOT NULL,
-      status TEXT NOT NULL,
-      selected_student_ids TEXT NOT NULL,
-      started_at TEXT,
-      ended_at TEXT,
-      created_at TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS events (
-      id TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL,
-      type TEXT NOT NULL,
-      actor TEXT NOT NULL,
-      content TEXT NOT NULL,
-      timestamp TEXT NOT NULL,
-      metadata TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS reports (
-      id TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL UNIQUE,
-      summary TEXT NOT NULL,
-      metrics TEXT NOT NULL,
-      strengths TEXT NOT NULL,
-      improvements TEXT NOT NULL,
-      key_moments TEXT NOT NULL,
-      generated_at TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS model_providers (
-      id TEXT PRIMARY KEY,
-      provider TEXT NOT NULL,
-      base_url TEXT NOT NULL,
-      api_key TEXT NOT NULL,
-      model TEXT NOT NULL,
-      temperature REAL NOT NULL,
-      enabled INTEGER NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-  `);
-
+  runMigrations(db);
   seedDefaults();
 }
 
@@ -236,12 +170,78 @@ function seedDefaults() {
   const studentCount = db.prepare("SELECT COUNT(*) AS total FROM students").get() as { total: number };
   if (studentCount.total === 0) {
     const students = [
-      ["小明", "走神型", "注意力容易漂移，但被点名后能跟上基础问题。", 56, 42, 48, 35, "容易低头走神，需要明确任务牵引", "走神", "用短问题拉回注意力，给他可完成的小任务。"],
-      ["雨晴", "积极型", "愿意举手表达，能带动课堂氛围。", 78, 82, 74, 86, "主动回应，偶尔抢答", "投入", "让她先说思路，再请其他学生补充。"],
-      ["阿哲", "薄弱型", "基础概念不稳，遇到抽象符号容易卡住。", 38, 66, 35, 52, "听不懂时沉默，需要具象例子", "困惑", "回到生活化例子，拆分步骤确认理解。"],
-      ["思源", "挑战型", "思维活跃，喜欢提出边界问题。", 88, 76, 84, 73, "会故意追问例外情况", "质疑", "肯定问题价值，并把问题转化为全班探究。"],
-      ["可欣", "内向型", "理解慢热，书面表达好但口头参与少。", 68, 72, 64, 31, "不主动举手，需要安全感", "观望", "先给思考时间，再邀请她读出记录。"],
-      ["浩然", "粗心型", "会计算但容易跳步，答案偶有低级错误。", 72, 58, 67, 62, "快答快错，需要过程检查", "急躁", "要求他说出依据，并展示中间步骤。"]
+      {
+        name: "小明",
+        avatar: "走神型",
+        personality: "注意力容易漂移，但被点名后能跟上基础问题。",
+        foundation: 56,
+        attention: 42,
+        comprehension: 48,
+        participation: 35,
+        behaviorStyle: "容易低头走神，需要明确任务牵引。",
+        status: "走神",
+        strategy: "用短问题拉回注意力，给他可完成的小任务。"
+      },
+      {
+        name: "雨晴",
+        avatar: "积极型",
+        personality: "愿意举手表达，能带动课堂氛围。",
+        foundation: 78,
+        attention: 82,
+        comprehension: 74,
+        participation: 86,
+        behaviorStyle: "主动回应，偶尔抢答。",
+        status: "投入",
+        strategy: "让她先说思路，再请其他学生补充。"
+      },
+      {
+        name: "阿哲",
+        avatar: "薄弱型",
+        personality: "基础概念不稳，遇到抽象符号容易卡住。",
+        foundation: 38,
+        attention: 66,
+        comprehension: 35,
+        participation: 52,
+        behaviorStyle: "听不懂时沉默，需要具体例子。",
+        status: "困惑",
+        strategy: "回到生活化例子，拆分步骤确认理解。"
+      },
+      {
+        name: "思源",
+        avatar: "挑战型",
+        personality: "思维活跃，喜欢提出边界问题。",
+        foundation: 88,
+        attention: 76,
+        comprehension: 84,
+        participation: 73,
+        behaviorStyle: "会故意追问例外情况。",
+        status: "质疑",
+        strategy: "肯定问题价值，并把追问转化为全班探究。"
+      },
+      {
+        name: "可欣",
+        avatar: "内向型",
+        personality: "理解慢热，书面表达好但口头参与少。",
+        foundation: 68,
+        attention: 72,
+        comprehension: 64,
+        participation: 31,
+        behaviorStyle: "不主动举手，需要安全感。",
+        status: "观望",
+        strategy: "先给思考时间，再邀请她读出记录。"
+      },
+      {
+        name: "浩然",
+        avatar: "粗心型",
+        personality: "会计算但容易跳步，答案偶有低级错误。",
+        foundation: 72,
+        attention: 58,
+        comprehension: 67,
+        participation: 62,
+        behaviorStyle: "快答快错，需要过程检查。",
+        status: "急躁",
+        strategy: "要求他说出依据，并展示中间步骤。"
+      }
     ];
     const insertStudent = db.prepare(`
       INSERT INTO students (
@@ -249,19 +249,19 @@ function seedDefaults() {
         behavior_style, status, strategy, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    for (const [name, avatar, personality, foundation, attention, comprehension, participation, style, status, strategy] of students) {
+    for (const student of students) {
       insertStudent.run(
         randomUUID(),
-        name,
-        avatar,
-        personality,
-        foundation,
-        attention,
-        comprehension,
-        participation,
-        style,
-        status,
-        strategy,
+        student.name,
+        student.avatar,
+        student.personality,
+        student.foundation,
+        student.attention,
+        student.comprehension,
+        student.participation,
+        student.behaviorStyle,
+        student.status,
+        student.strategy,
         now()
       );
     }
