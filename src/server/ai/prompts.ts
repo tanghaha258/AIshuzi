@@ -1,4 +1,4 @@
-import type { ClassroomEvent, ClassroomMetrics, StudentAgent } from "../../shared/types.js";
+import type { ClassroomEvent, ClassroomMetrics, GenerateLessonPlanPayload, StudentAgent } from "../../shared/types.js";
 import type { GenerateStudentContext } from "./provider.js";
 
 export type ProviderScenario = "student-turn" | "lesson-plan" | "report";
@@ -67,13 +67,7 @@ export function buildStudentTurnPrompt(context: GenerateStudentContext): PromptB
   };
 }
 
-export function buildLessonPlanPrompt(input: {
-  subject: string;
-  grade: string;
-  topic: string;
-  objectives: string;
-  durationMinutes: number;
-}, students: StudentAgent[] = []): PromptBundle {
+export function buildLessonPlanPrompt(input: GenerateLessonPlanPayload, students: StudentAgent[] = []): PromptBundle {
   const studentProfiles = students.slice(0, 12).map((student) => ({
     id: student.id,
     name: student.name,
@@ -86,9 +80,17 @@ export function buildLessonPlanPrompt(input: {
     behaviorStyle: student.behaviorStyle,
     status: student.status
   }));
+  const planningMode = input.planningMode === "textbook" ? "教材课时备课" : "自由主题微格备课";
+  const textbookFields = [
+    input.textbookVersion ? `教材版本：${input.textbookVersion}` : "",
+    input.volume ? `册次：${input.volume}` : "",
+    input.unit ? `单元：${input.unit}` : "",
+    input.lesson ? `课题：${input.lesson}` : "",
+    input.period ? `课时：${input.period}` : ""
+  ].filter(Boolean);
 
   return {
-    maxTokens: 1200,
+    maxTokens: 2400,
     successMessage: "备课方案 JSON 生成正常。",
     messages: [
       {
@@ -100,9 +102,15 @@ export function buildLessonPlanPrompt(input: {
         content: [
           "请生成一份可直接用于微格试讲的备课方案。",
           "输出 JSON 格式必须严格符合：",
-          '{"title":"...","overview":"...","objectives":["..."],"stages":[{"type":"导入","name":"...","minutes":2,"teacherAction":"...","expectedStudentResponse":"...","strategyTip":"..."}],"incidents":[{"type":"听不懂","trigger":"...","studentRole":"...","teacherStrategy":"..."}],"recommendedStudentIds":["..."]}',
+          '{"title":"...","overview":"...","objectives":["..."],"stages":[{"type":"导入","name":"...","minutes":2,"teachingMethod":"情境导入法","teacherAction":"一句概括教师动作","actionScript":"可直接照着上课的具体题目、课堂话术、板书、追问和学生操作","expectedStudentResponse":"...","strategyTip":"..."}],"incidents":[{"type":"听不懂","trigger":"...","studentRole":"...","teacherStrategy":"..."}],"recommendedStudentIds":["..."]}',
           "stages 必须依次覆盖：导入、讲解、提问、练习、总结。incidents 必须覆盖听不懂、抢答、质疑、沉默、跑题中的至少四类。",
+          "每个 stage 必须写出具体的 teachingMethod，例如情境导入法、支架式讲解、问题链教学、即时诊断与变式练习、归纳建构法。",
+          "每个 stage 必须写 actionScript：包含具体题目或材料、教师可说出口的课堂话术、板书内容、追问句或学生操作。",
+          "禁止只写空泛表述，例如“贴近生活”“引导学生”“围绕目标”“拆解关键步骤”。如果是数学主题，actionScript 必须尽量包含数字、变量、方程或可计算条件。",
+          "标题、overview、每个 teacherAction 和 actionScript 必须严格围绕给定主题，不得改写成其他知识点或其他课题。",
           "recommendedStudentIds 必须从给定学生画像里选择，优先组成差异化课堂。",
+          `备课模式：${planningMode}`,
+          ...textbookFields,
           `学科：${input.subject}`,
           `年级：${input.grade}`,
           `主题：${input.topic}`,

@@ -233,7 +233,7 @@ export function TrainingRoom({
       setRuntimeStates(result.runtimeStates);
       setMetrics(result.metrics);
       setTeacherText("");
-      setModelNotice(result.usedModel ? "本轮由大模型生成" : "本轮由本地模拟生成");
+      setModelNotice(result.usedModel ? "本轮由大模型生成" : `本轮本地模拟：${result.fallbackReason || "未启用真实模型"}`);
     } finally {
       setSubmitting(false);
     }

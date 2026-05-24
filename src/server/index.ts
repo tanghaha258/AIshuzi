@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { initDb, store } from "./db.js";
 import { callChatCompletion, callJsonCompletion, generateAiStudentTurn, streamChatCompletion, validateProviderConfig } from "./ai/provider.js";
+import { createModelCallLog, sanitizeModelCallLog } from "./ai/observability.js";
 import { buildProviderScenarioPrompt, type ProviderScenario } from "./ai/prompts.js";
 import { buildTurnEvents, calculateMetrics, createReport } from "./domain/simulation.js";
 import {
@@ -43,7 +44,7 @@ function providerConfigFromBody(body: Partial<UpsertModelProviderPayload>, curre
     apiKey: rawApiKey === "********" ? current.apiKey : rawApiKey,
     model: requireString(body.model, current.model),
     temperature: Number(body.temperature ?? current.temperature),
-    enabled: Boolean(body.enabled)
+    enabled: typeof body.enabled === "boolean" ? body.enabled : current.enabled
   };
 }
 
@@ -122,6 +123,12 @@ app.post("/api/lesson-plans/generate", async (req, res) => {
 
   const input: GenerateLessonPlanPayload = {
     title: requireString(body.title),
+    planningMode: body.planningMode === "textbook" ? "textbook" : "free-topic",
+    textbookVersion: requireString(body.textbookVersion),
+    volume: requireString(body.volume),
+    unit: requireString(body.unit),
+    lesson: requireString(body.lesson),
+    period: requireString(body.period),
     subject,
     grade,
     topic,
@@ -130,7 +137,21 @@ app.post("/api/lesson-plans/generate", async (req, res) => {
   };
 
   const students = store.listStudents();
-  const { usedModel, planDraft } = await generateLessonPlan(store.getProvider(), input, students);
+  const provider = store.getProvider();
+  const startedAt = Date.now();
+  const { usedModel, planDraft, fallbackReason } = await generateLessonPlan(provider, input, students);
+  store.addModelCallLog(createModelCallLog({
+    scenario: "lesson-plan",
+    provider,
+    status: usedModel ? "success" : "fallback",
+    usedModel,
+    fallbackReason,
+    durationMs: Date.now() - startedAt,
+    metadata: {
+      topic,
+      planningMode: input.planningMode
+    }
+  }));
   const course = store.createCourse({
     title: input.title || planDraft.title,
     subject,
@@ -149,8 +170,14 @@ app.post("/api/lesson-plans/generate", async (req, res) => {
     course,
     lessonPlan,
     recommendedStudents,
-    usedModel
+    usedModel,
+    fallbackReason: fallbackReason ?? ""
   });
+});
+
+app.get("/api/model-calls", (req, res) => {
+  const limit = Number(req.query.limit ?? 50);
+  res.json(store.listModelCallLogs(limit).map(sanitizeModelCallLog));
 });
 
 app.get("/api/students", (_req, res) => {
@@ -256,6 +283,7 @@ app.post("/api/sessions/:id/turn", async (req, res) => {
   const respondingStudents = selectStudentsForTurn(runtimeStudents, runtimeStates, teacherText, Math.min(4, runtimeStudents.length));
   const recentEvents = store.listEvents(activeSession.id).slice(-8);
   const provider = store.getProvider();
+  const startedAt = Date.now();
   const aiTurn = await generateAiStudentTurn(provider, {
     session: activeSession,
     students: respondingStudents,
@@ -263,11 +291,24 @@ app.post("/api/sessions/:id/turn", async (req, res) => {
     runtimeStates,
     recentEvents
   });
+  store.addModelCallLog(createModelCallLog({
+    scenario: "student-turn",
+    provider,
+    status: aiTurn.usedModel ? "success" : "fallback",
+    usedModel: aiTurn.usedModel,
+    fallbackReason: aiTurn.fallbackReason,
+    durationMs: Date.now() - startedAt,
+    metadata: {
+      sessionId: activeSession.id,
+      teacherEventId: teacherEvent.id,
+      respondingStudentIds: respondingStudents.map((student) => student.id)
+    }
+  }));
 
   const updatedRuntimeStates = applyStudentMessagesToRuntime(runtimeStates, aiTurn.result.messages);
   updatedRuntimeStates.forEach((state) => store.upsertRuntimeState(state));
   const stateEvents = buildRuntimeStateEvents(runtimeStates, updatedRuntimeStates, runtimeStudents).map((event) => store.addEvent(event));
-  const savedEvents = buildTurnEvents(activeSession.id, aiTurn.result, aiTurn.usedModel, updatedRuntimeStates).map((event) => store.addEvent(event));
+  const savedEvents = buildTurnEvents(activeSession.id, aiTurn.result, aiTurn.usedModel, updatedRuntimeStates, aiTurn.fallbackReason).map((event) => store.addEvent(event));
   const allEvents = store.listEvents(activeSession.id);
   const metrics = calculateMetrics(allEvents, runtimeStudents);
   const metricEvent = store.addEvent({
@@ -285,7 +326,8 @@ app.post("/api/sessions/:id/turn", async (req, res) => {
     metricEvent,
     metrics,
     runtimeStates: updatedRuntimeStates,
-    usedModel: aiTurn.usedModel
+    usedModel: aiTurn.usedModel,
+    fallbackReason: aiTurn.fallbackReason ?? ""
   });
 });
 
@@ -334,7 +376,7 @@ app.post("/api/model-provider", (req, res) => {
     apiKey,
     model: requireString(body.model, current.model),
     temperature: Number(body.temperature ?? current.temperature),
-    enabled: Boolean(body.enabled)
+    enabled: typeof body.enabled === "boolean" ? body.enabled : current.enabled
   });
   res.json({ ...config, apiKey: config.apiKey ? "********" : "" });
 });
@@ -343,7 +385,17 @@ app.post("/api/model-provider/test", async (req, res) => {
   const body = req.body as Partial<UpsertModelProviderPayload>;
   const config = providerConfigFromBody(body);
   const validation = validateProviderConfig(config);
+  const startedAt = Date.now();
   if (!validation.ok) {
+    store.addModelCallLog(createModelCallLog({
+      scenario: "provider-test",
+      provider: config,
+      status: "error",
+      usedModel: false,
+      fallbackReason: validation.message,
+      durationMs: Date.now() - startedAt,
+      metadata: { testType: "connection" }
+    }));
     res.json({ ok: false, message: validation.message });
     return;
   }
@@ -354,11 +406,29 @@ app.post("/api/model-provider/test", async (req, res) => {
         { role: "system", content: "你是模型连接测试助手，只用中文简短回复。" },
         { role: "user", content: "请回复：模型连接正常。" }
       ],
-      { maxTokens: 24 }
+      { maxTokens: 24, timeoutMs: 20000 }
     );
+    store.addModelCallLog(createModelCallLog({
+      scenario: "provider-test",
+      provider: config,
+      status: "success",
+      usedModel: true,
+      durationMs: Date.now() - startedAt,
+      metadata: { testType: "connection" }
+    }));
     res.json({ ok: true, message: reply || "模型连接正常。" });
   } catch (error) {
-    res.json({ ok: false, message: error instanceof Error ? error.message : "模型连接测试失败。" });
+    const message = error instanceof Error ? error.message : "模型连接测试失败。";
+    store.addModelCallLog(createModelCallLog({
+      scenario: "provider-test",
+      provider: config,
+      status: "error",
+      usedModel: false,
+      fallbackReason: message,
+      durationMs: Date.now() - startedAt,
+      metadata: { testType: "connection" }
+    }));
+    res.json({ ok: false, message });
   }
 });
 
@@ -371,17 +441,48 @@ app.post("/api/model-provider/scenario-test", async (req, res) => {
 
   const config = providerConfigFromBody(req.body as Partial<UpsertModelProviderPayload>);
   const validation = validateProviderConfig(config);
+  const startedAt = Date.now();
   if (!validation.ok) {
+    store.addModelCallLog(createModelCallLog({
+      scenario,
+      provider: config,
+      status: "error",
+      usedModel: false,
+      fallbackReason: validation.message,
+      durationMs: Date.now() - startedAt,
+      metadata: { testType: "scenario" }
+    }));
     res.json({ ok: false, message: validation.message });
     return;
   }
 
   try {
     const prompt = buildProviderScenarioPrompt(scenario);
-    const sample = await callJsonCompletion<Record<string, unknown>>(config, prompt.messages, { maxTokens: prompt.maxTokens });
+    const sample = await callJsonCompletion<Record<string, unknown>>(config, prompt.messages, {
+      maxTokens: prompt.maxTokens,
+      timeoutMs: scenario === "lesson-plan" ? 45000 : 30000
+    });
+    store.addModelCallLog(createModelCallLog({
+      scenario,
+      provider: config,
+      status: "success",
+      usedModel: true,
+      durationMs: Date.now() - startedAt,
+      metadata: { testType: "scenario" }
+    }));
     res.json({ ok: true, message: prompt.successMessage, sample });
   } catch (error) {
-    res.json({ ok: false, message: error instanceof Error ? error.message : "模型场景测试失败。" });
+    const message = error instanceof Error ? error.message : "模型场景测试失败。";
+    store.addModelCallLog(createModelCallLog({
+      scenario,
+      provider: config,
+      status: "error",
+      usedModel: false,
+      fallbackReason: message,
+      durationMs: Date.now() - startedAt,
+      metadata: { testType: "scenario" }
+    }));
+    res.json({ ok: false, message });
   }
 });
 

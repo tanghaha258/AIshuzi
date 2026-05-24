@@ -15,12 +15,19 @@ interface GeneratedPlanState {
   course: Course;
   lessonPlan: LessonPlan;
   usedModel: boolean;
+  fallbackReason: string;
 }
 
 const initialDraft: GenerateLessonPlanPayload = {
+  planningMode: "free-topic",
   title: "",
   subject: "数学",
   grade: "八年级",
+  textbookVersion: "人教版",
+  volume: "八年级下册",
+  unit: "第十八章",
+  lesson: "勾股定理",
+  period: "第1课时",
   topic: "勾股定理的生活化理解",
   objectives: "学生能够用生活例子解释直角三角形三边关系，并完成一次即时判断。",
   durationMinutes: 10
@@ -102,7 +109,8 @@ export function CoursePlannerPage({
       setGenerated({
         course: result.course,
         lessonPlan: result.lessonPlan,
-        usedModel: result.usedModel
+        usedModel: result.usedModel,
+        fallbackReason: result.fallbackReason
       });
       onCourseCreated(result.course);
       setSelectedCourseId(result.course.id);
@@ -142,6 +150,22 @@ export function CoursePlannerPage({
             </div>
             <CalendarPlus size={26} />
           </div>
+          <div className="planner-mode-switch" role="group" aria-label="备课模式">
+            <button
+              className={draft.planningMode === "textbook" ? "planner-mode-switch__item planner-mode-switch__item--active" : "planner-mode-switch__item"}
+              type="button"
+              onClick={() => setDraft({ ...draft, planningMode: "textbook", topic: draft.lesson || draft.topic })}
+            >
+              教材课时备课
+            </button>
+            <button
+              className={draft.planningMode !== "textbook" ? "planner-mode-switch__item planner-mode-switch__item--active" : "planner-mode-switch__item"}
+              type="button"
+              onClick={() => setDraft({ ...draft, planningMode: "free-topic" })}
+            >
+              自由主题微格备课
+            </button>
+          </div>
           <div className="form-grid">
             <label>
               课程标题
@@ -159,6 +183,33 @@ export function CoursePlannerPage({
               试讲主题
               <input value={draft.topic} onChange={(event) => setDraft({ ...draft, topic: event.target.value })} />
             </label>
+            {draft.planningMode === "textbook" ? (
+              <>
+                <label>
+                  教材版本
+                  <input value={draft.textbookVersion ?? ""} onChange={(event) => setDraft({ ...draft, textbookVersion: event.target.value })} />
+                </label>
+                <label>
+                  册次
+                  <input value={draft.volume ?? ""} onChange={(event) => setDraft({ ...draft, volume: event.target.value })} />
+                </label>
+                <label>
+                  单元
+                  <input value={draft.unit ?? ""} onChange={(event) => setDraft({ ...draft, unit: event.target.value })} />
+                </label>
+                <label>
+                  课题
+                  <input
+                    value={draft.lesson ?? ""}
+                    onChange={(event) => setDraft({ ...draft, lesson: event.target.value, topic: event.target.value || draft.topic })}
+                  />
+                </label>
+                <label>
+                  课时
+                  <input value={draft.period ?? ""} onChange={(event) => setDraft({ ...draft, period: event.target.value })} />
+                </label>
+              </>
+            ) : null}
             <label>
               时长
               <input
@@ -192,6 +243,7 @@ export function CoursePlannerPage({
             lessonPlan={generated.lessonPlan}
             students={students}
             usedModel={generated.usedModel}
+            fallbackReason={generated.fallbackReason}
             canStart={selectedStudentIds.length > 0}
             onStart={startGeneratedSession}
           />

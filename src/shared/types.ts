@@ -75,12 +75,16 @@ export type LessonPlanStageType = "导入" | "讲解" | "提问" | "练习" | "�
 
 export type PlannedIncidentType = "听不懂" | "抢答" | "质疑" | "沉默" | "跑题";
 
+export type PlanningMode = "free-topic" | "textbook";
+
 export interface LessonPlanStage {
   id: string;
   type: LessonPlanStageType;
   name: string;
   minutes: number;
+  teachingMethod: string;
   teacherAction: string;
+  actionScript: string;
   expectedStudentResponse: string;
   strategyTip: string;
 }
@@ -103,11 +107,35 @@ export interface LessonPlan {
   incidents: PlannedClassroomIncident[];
   recommendedStudentIds: string[];
   generatedBy: "model" | "local";
+  planningMode: PlanningMode;
+  textbookVersion?: string;
+  volume?: string;
+  unit?: string;
+  lesson?: string;
+  period?: string;
   createdAt: string;
   updatedAt: string;
 }
 
 export type LessonPlanDraft = Omit<LessonPlan, "id" | "courseId" | "createdAt" | "updatedAt">;
+
+export type ModelCallScenario = "student-turn" | "lesson-plan" | "report" | "provider-test";
+
+export type ModelCallStatus = "success" | "fallback" | "error";
+
+export interface ModelCallLog {
+  id: string;
+  scenario: ModelCallScenario;
+  provider: string;
+  model: string;
+  baseURL: string;
+  status: ModelCallStatus;
+  usedModel: boolean;
+  fallbackReason: string;
+  durationMs: number;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+}
 
 export interface TrainingSession {
   id: string;
@@ -183,6 +211,12 @@ export interface CreateCoursePayload {
 
 export interface GenerateLessonPlanPayload {
   title?: string;
+  planningMode?: PlanningMode;
+  textbookVersion?: string;
+  volume?: string;
+  unit?: string;
+  lesson?: string;
+  period?: string;
   subject: string;
   grade: string;
   topic: string;

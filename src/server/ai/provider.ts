@@ -6,6 +6,7 @@ import type {
   TrainingSession
 } from "../../shared/types.js";
 import { parseJsonObject } from "./json.js";
+import { summarizeModelFailure } from "./observability.js";
 import { buildStudentTurnPrompt } from "./prompts.js";
 
 export interface GenerateStudentContext {
@@ -37,6 +38,7 @@ export interface ChatCompletionOptions {
   maxTokens?: number;
   json?: boolean;
   stream?: boolean;
+  timeoutMs?: number;
   extraBody?: Record<string, unknown>;
 }
 
@@ -45,7 +47,12 @@ function cleanBaseUrl(baseURL: string) {
 }
 
 function chatCompletionUrl(config: ModelProviderConfig) {
-  return `${cleanBaseUrl(config.baseURL)}/chat/completions`;
+  const baseURL = cleanBaseUrl(config.baseURL);
+  return /\/chat\/completions$/i.test(baseURL) ? baseURL : `${baseURL}/chat/completions`;
+}
+
+function isDeepSeekProvider(config: ModelProviderConfig) {
+  return /deepseek/i.test(config.provider) || /deepseek/i.test(config.baseURL) || /^deepseek-/i.test(config.model);
 }
 
 export function validateProviderConfig(config: ModelProviderConfig) {
@@ -81,6 +88,9 @@ export function buildChatCompletionPayload(
   if (options.json) {
     payload.response_format = { type: "json_object" };
   }
+  if (isDeepSeekProvider(config)) {
+    payload.thinking = { type: "disabled" };
+  }
   if (options.stream) {
     payload.stream = true;
   }
@@ -102,6 +112,21 @@ async function readProviderError(response: Response) {
   }
 }
 
+function createTimeoutController(timeoutMs = 45000) {
+  const safeTimeoutMs = Math.max(1, Math.min(120000, Math.round(timeoutMs)));
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), safeTimeoutMs);
+  return {
+    signal: controller.signal,
+    timeoutMs: safeTimeoutMs,
+    cancel: () => clearTimeout(timer)
+  };
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof Error && (error.name === "AbortError" || /aborted|abort/i.test(error.message));
+}
+
 function describeProviderError(status: number, detail: string) {
   const suffix = detail ? `（${detail}）` : "";
   if (status === 401 || status === 403) return `模型接口鉴权失败，请检查 API Key。${suffix}`;
@@ -112,20 +137,32 @@ function describeProviderError(status: number, detail: string) {
   return `模型接口返回 ${status}。${suffix}`;
 }
 
-async function postChatCompletion(config: ModelProviderConfig, payload: Record<string, unknown>) {
+async function postChatCompletion(config: ModelProviderConfig, payload: Record<string, unknown>, timeoutMs?: number) {
   const validation = validateProviderConfig(config);
   if (!validation.ok) {
     throw new Error(validation.message);
   }
 
-  const response = await fetch(chatCompletionUrl(config), {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${config.apiKey}`
-    },
-    body: JSON.stringify(payload)
-  });
+  let response: Response;
+  const timeout = createTimeoutController(timeoutMs);
+  try {
+    response = await fetch(chatCompletionUrl(config), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${config.apiKey}`
+      },
+      body: JSON.stringify(payload),
+      signal: timeout.signal
+    });
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw new Error(`模型接口请求超时（${timeout.timeoutMs}ms），请检查网络、代理或 Base URL。`);
+    }
+    throw error;
+  } finally {
+    timeout.cancel();
+  }
 
   if (!response.ok) {
     throw new Error(describeProviderError(response.status, await readProviderError(response)));
@@ -139,7 +176,7 @@ export async function callChatCompletion(
   messages: ChatMessage[],
   options: ChatCompletionOptions = {}
 ) {
-  const response = await postChatCompletion(config, buildChatCompletionPayload(config, messages, options));
+  const response = await postChatCompletion(config, buildChatCompletionPayload(config, messages, options), options.timeoutMs);
   const payload = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
   const content = payload.choices?.[0]?.message?.content ?? "";
   if (options.json && !content.trim()) {
@@ -337,11 +374,13 @@ function normalizeStudentTurnResult(raw: Record<string, unknown>, students: Stud
 export async function generateAiStudentTurn(
   config: ModelProviderConfig,
   context: GenerateStudentContext
-): Promise<{ usedModel: boolean; result: AiSuggestionResult }> {
-  if (!config.enabled || !config.apiKey || !config.baseURL || !config.model) {
+): Promise<{ usedModel: boolean; result: AiSuggestionResult; fallbackReason?: string }> {
+  const validation = validateProviderConfig(config);
+  if (!validation.ok) {
     const messages = context.students.slice(0, 3).map((student, index) => fallbackMessage(student, context, index));
     return {
       usedModel: false,
+      fallbackReason: validation.message,
       result: {
         messages,
         suggestion: fallbackSuggestion(messages, context)
@@ -351,18 +390,23 @@ export async function generateAiStudentTurn(
 
   try {
     const prompt = buildStudentTurnPrompt(context);
-    const raw = await callJsonCompletion<Record<string, unknown>>(config, prompt.messages, { maxTokens: prompt.maxTokens });
+    const raw = await callJsonCompletion<Record<string, unknown>>(config, prompt.messages, {
+      maxTokens: prompt.maxTokens,
+      timeoutMs: 30000
+    });
     return {
       usedModel: true,
       result: normalizeStudentTurnResult(raw, context.students)
     };
-  } catch {
+  } catch (error) {
+    const fallbackReason = summarizeModelFailure(error);
     const messages = context.students.slice(0, 3).map((student, index) => fallbackMessage(student, context, index));
     return {
       usedModel: false,
+      fallbackReason,
       result: {
         messages,
-        suggestion: `${fallbackSuggestion(messages, context)} 当前模型调用不可用，系统已切换为本地模拟回应。`
+        suggestion: `${fallbackSuggestion(messages, context)} ${fallbackReason}`
       }
     };
   }

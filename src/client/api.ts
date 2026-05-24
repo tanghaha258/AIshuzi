@@ -6,6 +6,7 @@ import type {
   EvaluationReport,
   GenerateLessonPlanPayload,
   LessonPlan,
+  ModelCallLog,
   ModelProviderConfig,
   StudentAgent,
   StudentRuntimeState,
@@ -37,6 +38,7 @@ export const api = {
       lessonPlan: LessonPlan;
       recommendedStudents: StudentAgent[];
       usedModel: boolean;
+      fallbackReason: string;
     }>("/api/lesson-plans/generate", { method: "POST", body: JSON.stringify(payload) }),
   getLessonPlan: (courseId: string) =>
     request<LessonPlan>(`/api/courses/${courseId}/lesson-plan`),
@@ -60,6 +62,7 @@ export const api = {
       metrics: ClassroomMetrics;
       runtimeStates: StudentRuntimeState[];
       usedModel: boolean;
+      fallbackReason: string;
     }>(`/api/sessions/${sessionId}/turn`, {
       method: "POST",
       body: JSON.stringify({ teacherText, inputMode })
@@ -72,6 +75,7 @@ export const api = {
   completeSession: (sessionId: string) =>
     request<{ session: TrainingSession; report: EvaluationReport }>(`/api/sessions/${sessionId}/complete`, { method: "POST" }),
   getModelProvider: () => request<ModelProviderConfig>("/api/model-provider"),
+  listModelCalls: (limit = 50) => request<ModelCallLog[]>(`/api/model-calls?limit=${limit}`),
   saveModelProvider: (payload: Partial<ModelProviderConfig>) =>
     request<ModelProviderConfig>("/api/model-provider", {
       method: "POST",

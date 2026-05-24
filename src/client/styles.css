@@ -331,6 +331,34 @@ meter::-webkit-meter-optimum-value {
   min-width: 0;
 }
 
+.planner-mode-switch {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  width: 100%;
+  margin-bottom: 14px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #f4f8f8;
+}
+
+.planner-mode-switch__item {
+  min-height: 36px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--muted);
+  background: transparent;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.planner-mode-switch__item--active {
+  color: #ffffff;
+  background: var(--brand);
+  box-shadow: 0 8px 18px rgba(20, 124, 120, 0.18);
+}
+
 .lesson-plan-panel {
   display: grid;
   gap: 14px;
@@ -389,6 +417,26 @@ meter::-webkit-meter-optimum-value {
   background: #dff5f2;
 }
 
+.ai-generation-status {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 8px 10px;
+  border: 1px solid #ead7aa;
+  border-radius: var(--radius);
+  color: #815a10;
+  background: #fff8e8;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.45;
+}
+
+.ai-generation-status--model {
+  border-color: #b7e2dc;
+  color: var(--brand-strong);
+  background: #ebfaf8;
+}
+
 .lesson-plan-objectives {
   display: flex;
   flex-wrap: wrap;
@@ -416,7 +464,7 @@ meter::-webkit-meter-optimum-value {
 
 .lesson-stage-table table {
   width: 100%;
-  min-width: 860px;
+  min-width: 1240px;
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -449,6 +497,17 @@ meter::-webkit-meter-optimum-value {
   width: 68px;
   color: var(--brand-strong);
   font-weight: 900;
+}
+
+.lesson-stage-table--method {
+  width: 128px;
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.lesson-stage-table--script {
+  width: 260px;
+  color: var(--ink);
 }
 
 .stage-type-pill {
@@ -1414,6 +1473,75 @@ meter::-webkit-meter-optimum-value {
   word-break: break-word;
   font-size: 12px;
   line-height: 1.55;
+}
+
+.model-call-log-list {
+  display: grid;
+  gap: 10px;
+}
+
+.model-call-log {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) auto minmax(150px, 0.5fr);
+  gap: 10px;
+  align-items: start;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #f8fbfb;
+}
+
+.model-call-log strong,
+.model-call-log span {
+  display: block;
+}
+
+.model-call-log div span,
+.model-call-log small,
+.model-call-log p,
+.model-call-empty {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.model-call-log p {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding-top: 2px;
+  color: #8f5f0e;
+}
+
+.model-call-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.model-call-status--success {
+  color: #137152;
+  background: #e2f5ed;
+}
+
+.model-call-status--fallback {
+  color: #8f5f0e;
+  background: #fff1ce;
+}
+
+.model-call-status--error {
+  color: #9b2931;
+  background: #f5e1e3;
+}
+
+.model-call-empty {
+  padding: 12px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  background: #f8fbfb;
 }
 
 .boot-screen {

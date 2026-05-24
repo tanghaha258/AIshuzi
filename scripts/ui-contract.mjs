@@ -34,12 +34,25 @@ const missing = requiredTrainingRoomSelectors.filter((selector) => {
 
 const requiredPlannerSelectors = [
   ".generated-planner-grid",
+  ".planner-mode-switch",
+  ".ai-generation-status",
   ".lesson-plan-panel",
   ".lesson-plan-panel__header",
   ".lesson-stage-table",
+  ".lesson-stage-table--method",
+  ".lesson-stage-table--script",
   ".incident-grid",
   ".incident-card",
   ".planner-actions"
+];
+
+const requiredSettingsSelectors = [
+  ".model-call-log-list",
+  ".model-call-log",
+  ".model-call-status",
+  ".model-call-status--success",
+  ".model-call-status--fallback",
+  ".model-call-empty"
 ];
 
 const missingPlannerSelectors = requiredPlannerSelectors.filter((selector) => {
@@ -50,6 +63,19 @@ const missingPlannerSelectors = requiredPlannerSelectors.filter((selector) => {
 if (missingPlannerSelectors.length) {
   console.error("Missing planner CSS selectors:");
   for (const selector of missingPlannerSelectors) {
+    console.error(`- ${selector}`);
+  }
+  process.exit(1);
+}
+
+const missingSettingsSelectors = requiredSettingsSelectors.filter((selector) => {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return !new RegExp(`${escaped}(?:[\\s,.:{#]|$)`).test(css);
+});
+
+if (missingSettingsSelectors.length) {
+  console.error("Missing settings CSS selectors:");
+  for (const selector of missingSettingsSelectors) {
     console.error(`- ${selector}`);
   }
   process.exit(1);
@@ -99,4 +125,4 @@ if (failedLayouts.length) {
   process.exit(1);
 }
 
-console.log(`UI contract passed (${requiredTrainingRoomSelectors.length + requiredPlannerSelectors.length} selectors).`);
+console.log(`UI contract passed (${requiredTrainingRoomSelectors.length + requiredPlannerSelectors.length + requiredSettingsSelectors.length} selectors).`);

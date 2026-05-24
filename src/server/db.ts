@@ -7,6 +7,8 @@ import type {
   Course,
   EvaluationReport,
   LessonPlan,
+  LessonPlanStage,
+  ModelCallLog,
   ModelProviderConfig,
   StudentAgent,
   StudentRuntimeState,
@@ -114,6 +116,22 @@ function rowToReport(row: Record<string, unknown>): EvaluationReport {
   };
 }
 
+const defaultTeachingMethods: Record<LessonPlanStage["type"], string> = {
+  导入: "情境导入法",
+  讲解: "支架式讲解",
+  提问: "问题链教学",
+  练习: "即时诊断与变式练习",
+  总结: "归纳建构法"
+};
+
+function normalizeLessonStages(stages: LessonPlan["stages"]): LessonPlan["stages"] {
+  return stages.map((stage) => ({
+    ...stage,
+    teachingMethod: stage.teachingMethod || defaultTeachingMethods[stage.type] || "互动讲解法",
+    actionScript: stage.actionScript || stage.teacherAction
+  }));
+}
+
 function rowToLessonPlan(row: Record<string, unknown>): LessonPlan {
   return {
     id: String(row.id),
@@ -121,10 +139,16 @@ function rowToLessonPlan(row: Record<string, unknown>): LessonPlan {
     title: String(row.title),
     overview: String(row.overview),
     objectives: json<string[]>(String(row.objectives ?? "[]"), []),
-    stages: json<LessonPlan["stages"]>(String(row.stages ?? "[]"), []),
+    stages: normalizeLessonStages(json<LessonPlan["stages"]>(String(row.stages ?? "[]"), [])),
     incidents: json<LessonPlan["incidents"]>(String(row.incidents ?? "[]"), []),
     recommendedStudentIds: json<string[]>(String(row.recommended_student_ids ?? "[]"), []),
     generatedBy: row.generated_by === "model" ? "model" : "local",
+    planningMode: row.planning_mode === "textbook" ? "textbook" : "free-topic",
+    textbookVersion: row.textbook_version ? String(row.textbook_version) : undefined,
+    volume: row.volume ? String(row.volume) : undefined,
+    unit: row.unit ? String(row.unit) : undefined,
+    lesson: row.lesson ? String(row.lesson) : undefined,
+    period: row.period ? String(row.period) : undefined,
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at)
   };
@@ -156,6 +180,22 @@ function rowToProvider(row: Record<string, unknown>): ModelProviderConfig {
     temperature: Number(row.temperature),
     enabled: Boolean(row.enabled),
     updatedAt: String(row.updated_at)
+  };
+}
+
+function rowToModelCallLog(row: Record<string, unknown>): ModelCallLog {
+  return {
+    id: String(row.id),
+    scenario: row.scenario as ModelCallLog["scenario"],
+    provider: String(row.provider),
+    model: String(row.model),
+    baseURL: String(row.base_url),
+    status: row.status as ModelCallLog["status"],
+    usedModel: Boolean(row.used_model),
+    fallbackReason: String(row.fallback_reason ?? ""),
+    durationMs: Number(row.duration_ms ?? 0),
+    metadata: json<Record<string, unknown>>(String(row.metadata ?? "{}"), {}),
+    createdAt: String(row.created_at)
   };
 }
 
@@ -522,8 +562,9 @@ export const store = {
     db.prepare(`
       INSERT INTO lesson_plans (
         id, course_id, title, overview, objectives, stages, incidents,
-        recommended_student_ids, generated_by, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        recommended_student_ids, generated_by, planning_mode, textbook_version, volume,
+        unit, lesson, period, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(course_id) DO UPDATE SET
         title = excluded.title,
         overview = excluded.overview,
@@ -532,6 +573,12 @@ export const store = {
         incidents = excluded.incidents,
         recommended_student_ids = excluded.recommended_student_ids,
         generated_by = excluded.generated_by,
+        planning_mode = excluded.planning_mode,
+        textbook_version = excluded.textbook_version,
+        volume = excluded.volume,
+        unit = excluded.unit,
+        lesson = excluded.lesson,
+        period = excluded.period,
         updated_at = excluded.updated_at
     `).run(
       lessonPlan.id,
@@ -543,10 +590,48 @@ export const store = {
       JSON.stringify(lessonPlan.incidents),
       JSON.stringify(lessonPlan.recommendedStudentIds),
       lessonPlan.generatedBy,
+      lessonPlan.planningMode,
+      lessonPlan.textbookVersion ?? null,
+      lessonPlan.volume ?? null,
+      lessonPlan.unit ?? null,
+      lessonPlan.lesson ?? null,
+      lessonPlan.period ?? null,
       lessonPlan.createdAt,
       lessonPlan.updatedAt
     );
     return lessonPlan;
+  },
+  addModelCallLog(log: Omit<ModelCallLog, "id" | "createdAt"> & { id?: string; createdAt?: string }): ModelCallLog {
+    const record: ModelCallLog = {
+      ...log,
+      id: log.id ?? randomUUID(),
+      createdAt: log.createdAt ?? now()
+    };
+    db.prepare(`
+      INSERT INTO model_call_logs (
+        id, scenario, provider, model, base_url, status, used_model,
+        fallback_reason, duration_ms, metadata, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      record.id,
+      record.scenario,
+      record.provider,
+      record.model,
+      record.baseURL,
+      record.status,
+      record.usedModel ? 1 : 0,
+      record.fallbackReason,
+      record.durationMs,
+      JSON.stringify(record.metadata ?? {}),
+      record.createdAt
+    );
+    return record;
+  },
+  listModelCallLogs(limit = 50): ModelCallLog[] {
+    const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(200, Math.round(limit))) : 50;
+    return (
+      db.prepare("SELECT * FROM model_call_logs ORDER BY created_at DESC LIMIT ?").all(safeLimit) as Record<string, unknown>[]
+    ).map(rowToModelCallLog);
   },
   getReport(sessionId: string): EvaluationReport | undefined {
     const row = db.prepare("SELECT * FROM reports WHERE session_id = ?").get(sessionId) as Record<string, unknown> | undefined;

@@ -50,7 +50,8 @@ export function buildTurnEvents(
   sessionId: string,
   aiResult: AiSuggestionResult,
   usedModel: boolean,
-  runtimeStates: StudentRuntimeState[] = []
+  runtimeStates: StudentRuntimeState[] = [],
+  fallbackReason = ""
 ): Array<Omit<ClassroomEvent, "id" | "timestamp">> {
   const runtimeByStudent = new Map(runtimeStates.map((state) => [state.studentId, state]));
   const events: Array<Omit<ClassroomEvent, "id" | "timestamp">> = aiResult.messages.map((message) => ({
@@ -62,7 +63,8 @@ export function buildTurnEvents(
       studentId: message.studentId,
       mood: message.mood,
       runtimeState: runtimeByStudent.get(message.studentId),
-      source: usedModel ? "model" : "local-simulation"
+      source: usedModel ? "model" : "local-simulation",
+      fallbackReason
     }
   }));
 
@@ -72,7 +74,8 @@ export function buildTurnEvents(
     actor: "教学策略助手",
     content: aiResult.suggestion,
     metadata: {
-      source: usedModel ? "model" : "local-simulation"
+      source: usedModel ? "model" : "local-simulation",
+      fallbackReason
     }
   });
 

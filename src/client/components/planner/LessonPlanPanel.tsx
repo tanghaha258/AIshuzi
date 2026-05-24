@@ -5,6 +5,7 @@ interface LessonPlanPanelProps {
   lessonPlan: LessonPlan;
   students: StudentAgent[];
   usedModel: boolean;
+  fallbackReason: string;
   canStart: boolean;
   onStart: () => void;
 }
@@ -13,6 +14,7 @@ export function LessonPlanPanel({
   lessonPlan,
   students,
   usedModel,
+  fallbackReason,
   canStart,
   onStart
 }: LessonPlanPanelProps) {
@@ -37,6 +39,10 @@ export function LessonPlanPanel({
 
       <p>{lessonPlan.overview}</p>
 
+      <div className={usedModel ? "ai-generation-status ai-generation-status--model" : "ai-generation-status"}>
+        {usedModel ? "DeepSeek 已生成" : `已切换本地模拟：${fallbackReason || "未启用真实模型"}`}
+      </div>
+
       <div className="lesson-plan-objectives">
         {lessonPlan.objectives.map((objective) => (
           <span key={objective}>{objective}</span>
@@ -49,7 +55,9 @@ export function LessonPlanPanel({
             <tr>
               <th>阶段</th>
               <th>分钟</th>
+              <th className="lesson-stage-table--method">教师教法</th>
               <th>教师动作</th>
+              <th className="lesson-stage-table--script">具体做法/话术</th>
               <th>学生反应</th>
               <th>策略</th>
             </tr>
@@ -62,7 +70,9 @@ export function LessonPlanPanel({
                   <strong>{stage.name}</strong>
                 </td>
                 <td>{stage.minutes}</td>
+                <td className="lesson-stage-table--method">{stage.teachingMethod}</td>
                 <td>{stage.teacherAction}</td>
+                <td className="lesson-stage-table--script">{stage.actionScript}</td>
                 <td>{stage.expectedStudentResponse}</td>
                 <td>{stage.strategyTip}</td>
               </tr>
