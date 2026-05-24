@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Camera,
   CheckCircle2,
   CircleDot,
+  Eraser,
   Loader2,
   Mic,
   MicOff,
@@ -21,6 +22,7 @@ import {
 import { api } from "../api";
 import { useCamera } from "../hooks/useCamera";
 import { useSpeechRecognition } from "../hooks/useSpeechRecognition";
+import { useTranscriptBuffer } from "../hooks/useTranscriptBuffer";
 import type {
   ClassroomEvent,
   ClassroomMetrics,
@@ -125,6 +127,21 @@ function timelineStatus(event: ClassroomEvent) {
   return "已同步";
 }
 
+function speechStatusLabel(status: ReturnType<typeof useSpeechRecognition>["status"]) {
+  switch (status) {
+    case "listening":
+      return "正在连续转写";
+    case "unsupported":
+      return "浏览器不支持语音";
+    case "blocked":
+      return "麦克风权限未开启";
+    case "error":
+      return "语音识别异常";
+    default:
+      return "语音待命";
+  }
+}
+
 export function TrainingRoom({
   session,
   students,
@@ -145,14 +162,26 @@ export function TrainingRoom({
   const [modelNotice, setModelNotice] = useState("本地模拟已待命");
   const { videoRef, status: cameraStatus } = useCamera(cameraEnabled);
   const selectedStudents = students.filter((student) => session.selectedStudentIds.includes(student.id));
+  const savedTranscriptIdsRef = useRef<Set<string>>(new Set());
+  const transcript = useTranscriptBuffer(session.id);
+  const speech = useSpeechRecognition(transcript.acceptSegment);
 
-  const handleSpeechText = useCallback((text: string) => {
-    setTeacherText((current) => `${current}${current ? " " : ""}${text}`);
+  const appendEvents = useCallback((incoming: ClassroomEvent[]) => {
+    setEvents((current) => {
+      const existingIds = new Set(current.map((event) => event.id));
+      const nextEvents = incoming.filter((event) => !existingIds.has(event.id));
+      return nextEvents.length ? [...current, ...nextEvents] : current;
+    });
   }, []);
-  const speech = useSpeechRecognition(handleSpeechText);
 
   useEffect(() => {
     setEvents(initialEvents);
+    savedTranscriptIdsRef.current = new Set(
+      initialEvents
+        .filter((event) => event.type === "transcript_segment")
+        .map((event) => String(event.metadata.transcriptId ?? ""))
+        .filter(Boolean)
+    );
   }, [initialEvents, session.id]);
 
   useEffect(() => {
@@ -168,7 +197,7 @@ export function TrainingRoom({
           if (cancelled) return;
           setRuntimeStates(result.runtimeStates);
           if (result.stateEvents.length) {
-            setEvents((current) => [...current, ...result.stateEvents]);
+            appendEvents(result.stateEvents);
           }
         })
         .catch(() => undefined);
@@ -177,7 +206,25 @@ export function TrainingRoom({
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [session.id, session.status]);
+  }, [appendEvents, session.id, session.status]);
+
+  useEffect(() => {
+    const unsavedSegments = transcript.finalSegments.filter((segment) => {
+      const id = segment.id ?? "";
+      return id && !savedTranscriptIdsRef.current.has(id);
+    });
+    if (!unsavedSegments.length) return;
+
+    unsavedSegments.forEach((segment) => segment.id && savedTranscriptIdsRef.current.add(segment.id));
+    api.saveTranscriptSegments(session.id, { segments: unsavedSegments })
+      .then((result) => {
+        appendEvents(result.transcriptEvents);
+      })
+      .catch((error) => {
+        unsavedSegments.forEach((segment) => segment.id && savedTranscriptIdsRef.current.delete(segment.id));
+        transcript.setLastError(error instanceof Error ? error.message : "保存转写片段失败。");
+      });
+  }, [appendEvents, session.id, transcript, transcript.finalSegments]);
 
   const timeline = useMemo(
     () => events.filter((event) => event.type !== "classroom_metric").slice(-8).reverse(),
@@ -229,11 +276,45 @@ export function TrainingRoom({
     setSubmitting(true);
     try {
       const result = await api.sendTurn(session.id, teacherText.trim(), inputMode);
-      setEvents((current) => [...current, result.teacherEvent, ...result.stateEvents, ...result.responses, result.metricEvent]);
+      appendEvents([result.teacherEvent, ...result.stateEvents, ...result.responses, result.metricEvent]);
       setRuntimeStates(result.runtimeStates);
       setMetrics(result.metrics);
       setTeacherText("");
       setModelNotice(result.usedModel ? "本轮由大模型生成" : `本轮本地模拟：${result.fallbackReason || "未启用真实模型"}`);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function sendTranscriptTurn() {
+    const segments = transcript.finalSegments;
+    if (!segments.length || submitting) return;
+    setSubmitting(true);
+    transcript.setLastError("");
+    try {
+      const result = await api.saveTranscriptSegments(session.id, {
+        segments,
+        sendAsTurn: true
+      });
+      result.transcriptEvents.forEach((event) => {
+        const transcriptId = String(event.metadata.transcriptId ?? "");
+        if (transcriptId) savedTranscriptIdsRef.current.add(transcriptId);
+      });
+      appendEvents(result.transcriptEvents);
+      if (result.turnResult) {
+        appendEvents([
+          result.turnResult.teacherEvent,
+          ...result.turnResult.stateEvents,
+          ...result.turnResult.responses,
+          result.turnResult.metricEvent
+        ]);
+        setRuntimeStates(result.turnResult.runtimeStates);
+        setMetrics(result.turnResult.metrics);
+        setModelNotice(result.turnResult.usedModel ? "本轮由大模型生成" : `本轮本地模拟：${result.turnResult.fallbackReason || "未启用真实模型"}`);
+      }
+      transcript.flushFinalSegments();
+    } catch (error) {
+      transcript.setLastError(error instanceof Error ? error.message : "发送转写回合失败。");
     } finally {
       setSubmitting(false);
     }
@@ -322,25 +403,52 @@ export function TrainingRoom({
               placeholder="输入教师发言，例如：同学们，谁能说说直角三角形里最长的边是哪一条？"
             />
             <div className="input-controls">
-              <button
-                className="ghost-button"
-                type="button"
-                disabled={!speech.supported}
-                onClick={() => {
-                  if (speech.listening) {
-                    speech.stop();
-                  } else {
-                    speech.start();
-                  }
-                }}
-              >
-                {speech.listening ? <MicOff size={17} /> : <Mic size={17} />}
-                {speech.supported ? (speech.listening ? "停止识别" : "语音转写") : "浏览器不支持语音"}
-              </button>
               <button className="primary-button" type="button" onClick={() => sendTurn("manual")} disabled={submitting}>
                 {submitting ? <Loader2 className="spin" size={17} /> : <Send size={17} />}
                 发送课堂回合
               </button>
+            </div>
+            <div className="transcript-panel">
+              <div className="screen-card__title">
+                <span><Mic size={15} /> 语音转写</span>
+                <span className={`speech-status-pill speech-status-pill--${speech.status}`}>{speechStatusLabel(speech.status)}</span>
+              </div>
+              <div className="transcript-panel__live">
+                <strong>实时</strong>
+                <span>{transcript.interimText || "开启后会显示尚未定稿的实时识别文本。"}</span>
+              </div>
+              <div className="transcript-segment-list">
+                {transcript.finalSegments.slice(-3).map((segment) => (
+                  <span key={segment.id}>{segment.text}</span>
+                ))}
+                {!transcript.finalSegments.length ? <span>暂无最终转写片段。</span> : null}
+              </div>
+              {(speech.error || transcript.lastError) ? <p className="transcript-error">{speech.error || transcript.lastError}</p> : null}
+              <div className="transcript-actions">
+                <button
+                  className="ghost-button"
+                  type="button"
+                  disabled={!speech.supported}
+                  onClick={() => {
+                    if (speech.listening) {
+                      speech.stop();
+                    } else {
+                      speech.start();
+                    }
+                  }}
+                >
+                  {speech.listening ? <MicOff size={17} /> : <Mic size={17} />}
+                  {speech.listening ? "停止连续转写" : "开始连续转写"}
+                </button>
+                <button className="ghost-button" type="button" onClick={transcript.clearTranscript}>
+                  <Eraser size={17} />
+                  清空转写
+                </button>
+                <button className="primary-button" type="button" onClick={sendTranscriptTurn} disabled={submitting || !transcript.finalSegments.length}>
+                  {submitting ? <Loader2 className="spin" size={17} /> : <Send size={17} />}
+                  用转写发送回合
+                </button>
+              </div>
             </div>
           </div>
 

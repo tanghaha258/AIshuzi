@@ -10,6 +10,7 @@ import type {
   ModelProviderConfig,
   StudentAgent,
   StudentRuntimeState,
+  TranscriptTurnPayload,
   TrainingSession
 } from "../shared/types";
 
@@ -66,6 +67,23 @@ export const api = {
     }>(`/api/sessions/${sessionId}/turn`, {
       method: "POST",
       body: JSON.stringify({ teacherText, inputMode })
+    }),
+  saveTranscriptSegments: (sessionId: string, payload: TranscriptTurnPayload) =>
+    request<{
+      transcriptEvents: ClassroomEvent[];
+      turnResult?: {
+        teacherEvent: ClassroomEvent;
+        responses: ClassroomEvent[];
+        stateEvents: ClassroomEvent[];
+        metricEvent: ClassroomEvent;
+        metrics: ClassroomMetrics;
+        runtimeStates: StudentRuntimeState[];
+        usedModel: boolean;
+        fallbackReason: string;
+      };
+    }>(`/api/sessions/${sessionId}/transcripts`, {
+      method: "POST",
+      body: JSON.stringify(payload)
     }),
   tickSession: (sessionId: string) =>
     request<{

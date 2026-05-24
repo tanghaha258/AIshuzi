@@ -15,10 +15,17 @@ import {
   selectStudentsForTurn
 } from "./services/studentState.js";
 import { generateLessonPlan } from "./services/lessonPlanner.js";
+import {
+  createTranscriptEvent,
+  mergeTranscriptSegments,
+  normalizeTranscriptSegment
+} from "./services/transcriptService.js";
 import type {
   CreateCoursePayload,
   CreateSessionPayload,
   GenerateLessonPlanPayload,
+  TrainingSession,
+  TranscriptTurnPayload,
   UpsertModelProviderPayload
 } from "../shared/types.js";
 
@@ -45,6 +52,80 @@ function providerConfigFromBody(body: Partial<UpsertModelProviderPayload>, curre
     model: requireString(body.model, current.model),
     temperature: Number(body.temperature ?? current.temperature),
     enabled: typeof body.enabled === "boolean" ? body.enabled : current.enabled
+  };
+}
+
+async function runTeacherTurn(
+  session: TrainingSession,
+  teacherText: string,
+  inputMode: "manual" | "speech",
+  extraMetadata: Record<string, unknown> = {}
+) {
+  const activeSession = session.status === "active" ? session : store.updateSessionStatus(session.id, "active") ?? session;
+  const teacherEvent = store.addEvent({
+    sessionId: activeSession.id,
+    type: "teacher_utterance",
+    actor: "教师",
+    content: teacherText,
+    metadata: {
+      input: inputMode,
+      ...extraMetadata
+    }
+  });
+
+  const allStudents = store.listStudents();
+  const selectedStudents = allStudents.filter((student) => activeSession.selectedStudentIds.includes(student.id));
+  const runtimeStudents = selectedStudents.length ? selectedStudents : allStudents.slice(0, 6);
+  const runtimeStates = store.ensureRuntimeStates(activeSession.id, runtimeStudents);
+  const respondingStudents = selectStudentsForTurn(runtimeStudents, runtimeStates, teacherText, Math.min(4, runtimeStudents.length));
+  const recentEvents = store.listEvents(activeSession.id).slice(-8);
+  const provider = store.getProvider();
+  const startedAt = Date.now();
+  const aiTurn = await generateAiStudentTurn(provider, {
+    session: activeSession,
+    students: respondingStudents,
+    teacherText,
+    runtimeStates,
+    recentEvents
+  });
+  store.addModelCallLog(createModelCallLog({
+    scenario: "student-turn",
+    provider,
+    status: aiTurn.usedModel ? "success" : "fallback",
+    usedModel: aiTurn.usedModel,
+    fallbackReason: aiTurn.fallbackReason,
+    durationMs: Date.now() - startedAt,
+    metadata: {
+      sessionId: activeSession.id,
+      teacherEventId: teacherEvent.id,
+      respondingStudentIds: respondingStudents.map((student) => student.id),
+      inputMode
+    }
+  }));
+
+  const updatedRuntimeStates = applyStudentMessagesToRuntime(runtimeStates, aiTurn.result.messages);
+  updatedRuntimeStates.forEach((state) => store.upsertRuntimeState(state));
+  const stateEvents = buildRuntimeStateEvents(runtimeStates, updatedRuntimeStates, runtimeStudents).map((event) => store.addEvent(event));
+  const savedEvents = buildTurnEvents(activeSession.id, aiTurn.result, aiTurn.usedModel, updatedRuntimeStates, aiTurn.fallbackReason).map((event) => store.addEvent(event));
+  const allEvents = store.listEvents(activeSession.id);
+  const metrics = calculateMetrics(allEvents, runtimeStudents);
+  const metricEvent = store.addEvent({
+    sessionId: activeSession.id,
+    type: "classroom_metric",
+    actor: "课堂脉搏",
+    content: `注意力 ${metrics.attention}，困惑度 ${metrics.confusion}，互动度 ${metrics.interaction}`,
+    metadata: { ...metrics }
+  });
+
+  return {
+    teacherEvent,
+    responses: savedEvents,
+    stateEvents,
+    metricEvent,
+    metrics,
+    runtimeStates: updatedRuntimeStates,
+    usedModel: aiTurn.usedModel,
+    fallbackReason: aiTurn.fallbackReason ?? ""
   };
 }
 
@@ -265,70 +346,56 @@ app.post("/api/sessions/:id/turn", async (req, res) => {
     return;
   }
 
-  const activeSession = session.status === "active" ? session : store.updateSessionStatus(session.id, "active") ?? session;
-  const teacherEvent = store.addEvent({
-    sessionId: activeSession.id,
-    type: "teacher_utterance",
-    actor: "教师",
-    content: teacherText,
-    metadata: {
-      input: req.body?.inputMode === "speech" ? "speech" : "manual"
-    }
-  });
+  res.json(await runTeacherTurn(session, teacherText, req.body?.inputMode === "speech" ? "speech" : "manual"));
+});
 
-  const allStudents = store.listStudents();
-  const selectedStudents = allStudents.filter((student) => activeSession.selectedStudentIds.includes(student.id));
-  const runtimeStudents = selectedStudents.length ? selectedStudents : allStudents.slice(0, 6);
-  const runtimeStates = store.ensureRuntimeStates(activeSession.id, runtimeStudents);
-  const respondingStudents = selectStudentsForTurn(runtimeStudents, runtimeStates, teacherText, Math.min(4, runtimeStudents.length));
-  const recentEvents = store.listEvents(activeSession.id).slice(-8);
-  const provider = store.getProvider();
-  const startedAt = Date.now();
-  const aiTurn = await generateAiStudentTurn(provider, {
-    session: activeSession,
-    students: respondingStudents,
-    teacherText,
-    runtimeStates,
-    recentEvents
-  });
-  store.addModelCallLog(createModelCallLog({
-    scenario: "student-turn",
-    provider,
-    status: aiTurn.usedModel ? "success" : "fallback",
-    usedModel: aiTurn.usedModel,
-    fallbackReason: aiTurn.fallbackReason,
-    durationMs: Date.now() - startedAt,
-    metadata: {
-      sessionId: activeSession.id,
-      teacherEventId: teacherEvent.id,
-      respondingStudentIds: respondingStudents.map((student) => student.id)
-    }
-  }));
+app.post("/api/sessions/:id/transcripts", async (req, res) => {
+  const session = store.getSession(req.params.id);
+  if (!session) {
+    res.status(404).json({ message: "Session not found" });
+    return;
+  }
 
-  const updatedRuntimeStates = applyStudentMessagesToRuntime(runtimeStates, aiTurn.result.messages);
-  updatedRuntimeStates.forEach((state) => store.upsertRuntimeState(state));
-  const stateEvents = buildRuntimeStateEvents(runtimeStates, updatedRuntimeStates, runtimeStudents).map((event) => store.addEvent(event));
-  const savedEvents = buildTurnEvents(activeSession.id, aiTurn.result, aiTurn.usedModel, updatedRuntimeStates, aiTurn.fallbackReason).map((event) => store.addEvent(event));
-  const allEvents = store.listEvents(activeSession.id);
-  const metrics = calculateMetrics(allEvents, runtimeStudents);
-  const metricEvent = store.addEvent({
-    sessionId: activeSession.id,
-    type: "classroom_metric",
-    actor: "课堂脉搏",
-    content: `注意力 ${metrics.attention}，困惑度 ${metrics.confusion}，互动度 ${metrics.interaction}`,
-    metadata: { ...metrics }
-  });
+  const body = req.body as Partial<TranscriptTurnPayload>;
+  if (!Array.isArray(body.segments) || body.segments.length === 0) {
+    res.status(400).json({ message: "请提供至少一个转写片段。" });
+    return;
+  }
 
-  res.json({
-    teacherEvent,
-    responses: savedEvents,
-    stateEvents,
-    metricEvent,
-    metrics,
-    runtimeStates: updatedRuntimeStates,
-    usedModel: aiTurn.usedModel,
-    fallbackReason: aiTurn.fallbackReason ?? ""
-  });
+  try {
+    const normalizedSegments = body.segments.map((segment) => normalizeTranscriptSegment({
+      ...segment,
+      sessionId: session.id
+    }));
+    const existingTranscriptEvents = store
+      .listEvents(session.id)
+      .filter((event) => event.type === "transcript_segment");
+    const existingByTranscriptId = new Map<string, typeof existingTranscriptEvents[number]>();
+    existingTranscriptEvents.forEach((event) => {
+      const transcriptId = String(event.metadata.transcriptId ?? "");
+      if (transcriptId) {
+        existingByTranscriptId.set(transcriptId, event);
+      }
+    });
+    const transcriptEvents = normalizedSegments.map((segment) => {
+      const existing = existingByTranscriptId.get(String(segment.id ?? ""));
+      if (existing) return existing;
+      return store.addEvent(createTranscriptEvent(session.id, segment));
+    });
+    const mergedText = mergeTranscriptSegments(normalizedSegments);
+    const turnResult = body.sendAsTurn && mergedText
+      ? await runTeacherTurn(session, mergedText, "speech", {
+        transcriptEventIds: transcriptEvents.map((event) => event.id)
+      })
+      : undefined;
+
+    res.status(201).json({
+      transcriptEvents,
+      turnResult
+    });
+  } catch (error) {
+    res.status(400).json({ message: error instanceof Error ? error.message : "保存转写失败。" });
+  }
 });
 
 app.post("/api/sessions/:id/tick", (req, res) => {

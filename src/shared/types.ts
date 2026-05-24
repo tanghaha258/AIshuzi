@@ -159,6 +159,26 @@ export interface ClassroomEvent {
   metadata: Record<string, unknown>;
 }
 
+export type TranscriptSource = "web-speech" | "manual" | "local-asr";
+
+export interface TranscriptSegment {
+  id?: string;
+  sessionId: string;
+  text: string;
+  isFinal: boolean;
+  source: TranscriptSource;
+  confidence: number;
+  startOffsetMs: number;
+  endOffsetMs: number;
+  language: string;
+  createdAt?: string;
+}
+
+export interface TranscriptTurnPayload {
+  segments: TranscriptSegment[];
+  sendAsTurn?: boolean;
+}
+
 export interface ClassroomMetrics {
   attention: number;
   confusion: number;

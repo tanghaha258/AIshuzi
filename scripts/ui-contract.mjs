@@ -24,7 +24,12 @@ const requiredTrainingRoomSelectors = [
   ".student-live-status",
   ".student-portrait",
   ".student-portrait__body",
-  ".student-portrait__desk"
+  ".student-portrait__desk",
+  ".transcript-panel",
+  ".transcript-panel__live",
+  ".transcript-segment-list",
+  ".speech-status-pill",
+  ".transcript-actions"
 ];
 
 const missing = requiredTrainingRoomSelectors.filter((selector) => {

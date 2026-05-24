@@ -96,6 +96,28 @@ async function run() {
     throw new Error("Turn did not produce student responses and metrics.");
   }
 
+  const transcript = await json(`${baseUrl}/api/sessions/${session.id}/transcripts`, {
+    method: "POST",
+    body: JSON.stringify({
+      segments: [
+        {
+          sessionId: session.id,
+          text: "老师继续追问，为什么这条边最长？",
+          isFinal: true,
+          source: "web-speech",
+          confidence: 0.82,
+          startOffsetMs: 0,
+          endOffsetMs: 1800,
+          language: "zh-CN"
+        }
+      ],
+      sendAsTurn: true
+    })
+  });
+  if (!transcript.transcriptEvents?.length || !transcript.turnResult?.responses?.length) {
+    throw new Error("Transcript route did not persist text and trigger a speech turn.");
+  }
+
   const completed = await json(`${baseUrl}/api/sessions/${session.id}/complete`, {
     method: "POST"
   });
@@ -103,7 +125,7 @@ async function run() {
     throw new Error("Completion did not produce a report.");
   }
 
-  console.log("Smoke check passed: dashboard, session, turn, and report are working.");
+  console.log("Smoke check passed: dashboard, session, transcript turn, and report are working.");
 }
 
 try {
