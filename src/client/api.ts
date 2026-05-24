@@ -51,6 +51,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ courseId, selectedStudentIds })
     }),
+  deleteSession: (sessionId: string) =>
+    request<{ ok: boolean }>(`/api/sessions/${sessionId}`, { method: "DELETE" }),
   getSession: (sessionId: string) =>
     request<{ session: TrainingSession; events: ClassroomEvent[]; runtimeStates: StudentRuntimeState[]; report?: EvaluationReport }>(`/api/sessions/${sessionId}`),
   startSession: (sessionId: string) =>

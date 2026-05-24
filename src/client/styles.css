@@ -143,6 +143,7 @@ meter::-webkit-meter-optimum-value {
   display: grid;
   grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.55fr);
   gap: 18px;
+  align-items: start;
 }
 
 .workspace-hero {
@@ -227,6 +228,11 @@ meter::-webkit-meter-optimum-value {
 }
 
 .panel--wide {
+  min-width: 0;
+}
+
+.course-entry-panel {
+  grid-column: 1;
   grid-row: span 2;
 }
 
@@ -292,6 +298,28 @@ meter::-webkit-meter-optimum-value {
   background: #fbfdfd;
 }
 
+.course-card {
+  min-height: 216px;
+}
+
+.course-card__body {
+  display: grid;
+  gap: 7px;
+}
+
+.course-card__body p {
+  display: -webkit-box;
+  min-height: 50px;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.course-card__actions {
+  display: grid;
+  margin-top: auto;
+}
+
 .course-card h3,
 .profile-card h3,
 .report-card h2 {
@@ -318,6 +346,11 @@ meter::-webkit-meter-optimum-value {
   grid-template-columns: minmax(0, 1fr) minmax(320px, 0.8fr);
   gap: 14px;
   margin-bottom: 14px;
+  align-items: start;
+}
+
+.planner-list-panel {
+  align-items: start;
 }
 
 .generated-planner-grid {
@@ -574,6 +607,13 @@ meter::-webkit-meter-optimum-value {
 .student-check-grid {
   display: grid;
   gap: 10px;
+  align-content: start;
+}
+
+.bounded-list {
+  max-height: 520px;
+  overflow: auto;
+  padding-right: 2px;
 }
 
 .select-card {
@@ -637,6 +677,46 @@ meter::-webkit-meter-optimum-value {
   font-weight: 700;
 }
 
+.list-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.search-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: min(100%, 320px);
+  min-height: 40px;
+  padding: 0 11px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fbfdfd;
+}
+
+.search-input input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+}
+
+.pagination-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .primary-button,
 .ghost-button,
 .danger-button,
@@ -686,6 +766,47 @@ meter::-webkit-meter-optimum-value {
 .key-moments {
   display: grid;
   gap: 10px;
+}
+
+.session-management-panel {
+  grid-column: 1 / -1;
+}
+
+.session-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+.session-card {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fbfdfd;
+}
+
+.session-card strong,
+.session-card span {
+  display: block;
+}
+
+.session-card span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.session-card__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.delete-session-button {
+  min-width: 86px;
 }
 
 .student-row,
@@ -1573,17 +1694,214 @@ meter::-webkit-meter-optimum-value {
 }
 
 .reports-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.report-list-toolbar {
+  margin-bottom: 14px;
 }
 
 .report-card__header {
   display: flex;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
 }
 
+.report-source-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  color: #8f5f0e;
+  background: #fff1ce;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.report-source-pill--model {
+  color: #137152;
+  background: #e2f5ed;
+}
+
+.report-overview-strip {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.report-overview-strip span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 10px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #f5faf9;
+  font-size: 12px;
+}
+
+.report-overview-strip strong {
+  color: var(--brand-strong);
+  font-size: 22px;
+  line-height: 1;
+}
+
+.report-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.78fr) minmax(0, 1.22fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
 .report-chart {
   min-height: 190px;
+}
+
+.report-chart,
+.report-recommendation-list,
+.report-timeline-table,
+.report-evidence-list,
+.report-student-diagnosis,
+.report-strategy-list,
+.report-export-panel {
+  min-width: 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.report-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  color: var(--brand-strong);
+}
+
+.report-section-title h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.report-recommendation-list {
+  display: grid;
+  gap: 10px;
+}
+
+.report-recommendation-card {
+  display: grid;
+  gap: 7px;
+  padding: 11px;
+  border-left: 4px solid var(--accent);
+  border-radius: 6px;
+  background: #f8fbfb;
+}
+
+.report-recommendation-card--high {
+  border-left-color: var(--danger);
+}
+
+.report-recommendation-card--medium {
+  border-left-color: var(--accent);
+}
+
+.report-recommendation-card--low {
+  border-left-color: var(--brand);
+}
+
+.report-recommendation-card div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.report-recommendation-card strong,
+.report-evidence-node strong,
+.report-student-diagnosis strong,
+.report-strategy-list strong,
+.report-export-panel strong {
+  color: var(--ink);
+}
+
+.report-recommendation-card span {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  padding: 0 8px;
+  border-radius: 999px;
+  color: var(--brand-strong);
+  background: #e8f4f3;
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.report-recommendation-card p,
+.report-recommendation-card small,
+.report-recommendation-card em,
+.report-evidence-node small,
+.report-student-diagnosis span,
+.report-student-diagnosis p,
+.report-strategy-list span,
+.report-strategy-list p,
+.report-export-panel span {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.report-recommendation-card em {
+  font-style: normal;
+  color: #8f5f0e;
+}
+
+.report-table-scroll {
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.report-timeline-table table {
+  width: 100%;
+  min-width: 780px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.report-timeline-table th,
+.report-timeline-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.report-timeline-table th {
+  color: var(--brand-strong);
+  background: #edf7f6;
+}
+
+.report-timeline-table td:first-child,
+.report-timeline-table th:first-child {
+  width: 82px;
+}
+
+.report-timeline-table td:nth-child(2),
+.report-timeline-table th:nth-child(2) {
+  width: 180px;
+}
+
+.report-timeline-table td:last-child,
+.report-timeline-table th:last-child {
+  width: 170px;
 }
 
 .report-columns {
@@ -1612,6 +1930,73 @@ meter::-webkit-meter-optimum-value {
   line-height: 1.55;
   font-size: 13px;
   margin-bottom: 6px;
+}
+
+.report-evidence-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.report-evidence-list .report-section-title {
+  grid-column: 1 / -1;
+}
+
+.report-evidence-node {
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fbfdfd;
+}
+
+.report-evidence-node span {
+  color: var(--brand-strong);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.report-student-diagnosis,
+.report-strategy-list {
+  display: grid;
+  gap: 9px;
+}
+
+.report-student-diagnosis div:not(.report-section-title),
+.report-strategy-list div:not(.report-section-title) {
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+  border-radius: 6px;
+  background: #f5faf9;
+}
+
+.report-strategy-list div:not(.report-section-title) {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.report-strategy-list p {
+  grid-column: 1 / -1;
+}
+
+.report-strategy-list span {
+  color: var(--brand-strong);
+  font-weight: 900;
+}
+
+.report-export-panel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.report-export-panel div {
+  display: grid;
+  gap: 3px;
+  min-width: 260px;
+  flex: 1;
 }
 
 .save-notice {
@@ -1818,6 +2203,11 @@ meter::-webkit-meter-optimum-value {
     grid-column: auto;
     grid-row: auto;
   }
+
+  .course-entry-panel {
+    grid-column: auto;
+    grid-row: auto;
+  }
 }
 
 @media (max-width: 860px) {
@@ -1840,9 +2230,15 @@ meter::-webkit-meter-optimum-value {
   .student-stage__deck,
   .student-management-grid,
   .reports-grid,
+  .report-detail-grid,
+  .report-evidence-list,
   .form-grid,
   .report-columns {
     grid-template-columns: 1fr;
+  }
+
+  .report-overview-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .student-agent-card--portrait {

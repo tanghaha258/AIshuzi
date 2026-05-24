@@ -118,6 +118,24 @@ export default function App() {
     await openSession(session.id);
   }
 
+  async function deleteSession(sessionId: string) {
+    await api.deleteSession(sessionId);
+    const next = await refresh();
+    if (activeSession?.id === sessionId) {
+      setActiveSession(null);
+      setActiveEvents([]);
+      setActiveRuntimeStates([]);
+      if (view === "training") {
+        const fallbackSession = next.sessions.find((session) => session.status !== "completed") ?? next.sessions[0];
+        if (fallbackSession) {
+          await openSession(fallbackSession.id);
+        } else {
+          navigate("dashboard");
+        }
+      }
+    }
+  }
+
   function handleSessionChange(session: TrainingSession) {
     setActiveSession(session);
     setData((current) => ({
@@ -200,7 +218,13 @@ export default function App() {
 
       <div className="content-shell">
         {view === "dashboard" ? (
-          <Dashboard data={data} onCreateSession={createSession} onOpenSession={openSession} onNavigate={navigate} />
+          <Dashboard
+            data={data}
+            onCreateSession={createSession}
+            onDeleteSession={deleteSession}
+            onOpenSession={openSession}
+            onNavigate={navigate}
+          />
         ) : null}
         {view === "planner" ? (
           <CoursePlannerPage

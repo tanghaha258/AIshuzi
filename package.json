@@ -21,10 +21,11 @@
     "test:teacher-vision-hook": "node scripts/teacher-vision-hook-contract.mjs",
     "test:camera-hook": "node scripts/camera-hook-contract.mjs",
     "test:training-input": "tsx scripts/training-input-contract.ts",
+    "test:report-generator": "tsx scripts/report-generator-contract.ts",
     "test:ai-observability": "tsx scripts/ai-observability-contract.ts",
     "test:provider": "tsx scripts/provider-contract.ts",
     "smoke": "node scripts/smoke.mjs",
-    "check": "npm run typecheck && npm run build && npm run test:agent-runtime && npm run test:agent-dialogue && npm run test:lesson-planner && npm run test:transcript && npm run test:observation && npm run test:teacher-vision && npm run test:teacher-vision-hook && npm run test:camera-hook && npm run test:training-input && npm run test:ui && npm run test:provider && npm run test:ai-observability && npm run smoke",
+    "check": "npm run typecheck && npm run build && npm run test:agent-runtime && npm run test:agent-dialogue && npm run test:lesson-planner && npm run test:transcript && npm run test:observation && npm run test:teacher-vision && npm run test:teacher-vision-hook && npm run test:camera-hook && npm run test:training-input && npm run test:report-generator && npm run test:ui && npm run test:provider && npm run test:ai-observability && npm run smoke",
     "electron": "echo Electron shell is scaffolded in ./electron and can be wired after web validation.",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

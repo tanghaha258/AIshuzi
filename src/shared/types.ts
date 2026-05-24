@@ -220,7 +220,73 @@ export interface EvaluationReport {
   strengths: string[];
   improvements: string[];
   keyMoments: string[];
+  overview: ReportOverview;
+  evidence: ReportEvidenceNode[];
+  keyTimeline: ReportTimelineItem[];
+  studentResponses: StudentResponseSummary[];
+  teacherStrategyHits: TeacherStrategyHit[];
+  recommendations: EvidenceBoundRecommendation[];
+  exportMarkdown: string;
+  exportHtml: string;
+  generatedBy: "model" | "local";
+  fallbackReason?: string;
   generatedAt: string;
+}
+
+export interface ReportOverview {
+  totalEvents: number;
+  teacherTurns: number;
+  studentResponses: number;
+  studentQuestions: number;
+  systemSuggestions: number;
+  teacherObservations: number;
+  durationMinutes: number;
+}
+
+export interface ReportEvidenceNode {
+  id: string;
+  eventId: string;
+  timestamp: string;
+  eventType: EventType;
+  actor: string;
+  quote: string;
+  reason: string;
+  weight: number;
+}
+
+export interface ReportTimelineItem {
+  time: string;
+  title: string;
+  description: string;
+  evidenceEventId: string;
+  eventType: EventType;
+}
+
+export interface StudentResponseSummary {
+  studentId?: string;
+  studentName: string;
+  profile: string;
+  responseCount: number;
+  questionCount: number;
+  confusionSignals: number;
+  engagementSignals: number;
+  evidenceEventIds: string[];
+  diagnosis: string;
+}
+
+export interface TeacherStrategyHit {
+  strategy: string;
+  matched: boolean;
+  evidenceEventIds: string[];
+  diagnosis: string;
+}
+
+export interface EvidenceBoundRecommendation {
+  title: string;
+  detail: string;
+  priority: "high" | "medium" | "low";
+  action: string;
+  evidenceEventIds: string[];
 }
 
 export interface DashboardData {

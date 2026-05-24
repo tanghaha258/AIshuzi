@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 
-const schemaVersion = 4;
+const schemaVersion = 5;
 
 export function runMigrations(db: DatabaseSync) {
   db.exec("PRAGMA journal_mode = WAL;");
@@ -62,6 +62,16 @@ export function runMigrations(db: DatabaseSync) {
         strengths TEXT NOT NULL,
         improvements TEXT NOT NULL,
         key_moments TEXT NOT NULL,
+        overview TEXT NOT NULL,
+        evidence TEXT NOT NULL,
+        key_timeline TEXT NOT NULL,
+        student_responses TEXT NOT NULL,
+        teacher_strategy_hits TEXT NOT NULL,
+        recommendations TEXT NOT NULL,
+        export_markdown TEXT NOT NULL,
+        export_html TEXT NOT NULL,
+        generated_by TEXT NOT NULL,
+        fallback_reason TEXT,
         generated_at TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS model_providers (
@@ -138,6 +148,22 @@ export function runMigrations(db: DatabaseSync) {
         metadata TEXT NOT NULL,
         created_at TEXT NOT NULL
       );
+      PRAGMA user_version = ${schemaVersion};
+    `);
+  }
+
+  if (currentVersion >= 1 && currentVersion < 5) {
+    db.exec(`
+      ALTER TABLE reports ADD COLUMN overview TEXT;
+      ALTER TABLE reports ADD COLUMN evidence TEXT;
+      ALTER TABLE reports ADD COLUMN key_timeline TEXT;
+      ALTER TABLE reports ADD COLUMN student_responses TEXT;
+      ALTER TABLE reports ADD COLUMN teacher_strategy_hits TEXT;
+      ALTER TABLE reports ADD COLUMN recommendations TEXT;
+      ALTER TABLE reports ADD COLUMN export_markdown TEXT;
+      ALTER TABLE reports ADD COLUMN export_html TEXT;
+      ALTER TABLE reports ADD COLUMN generated_by TEXT;
+      ALTER TABLE reports ADD COLUMN fallback_reason TEXT;
       PRAGMA user_version = ${schemaVersion};
     `);
   }

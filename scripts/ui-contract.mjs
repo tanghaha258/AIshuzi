@@ -63,6 +63,34 @@ const requiredSettingsSelectors = [
   ".model-call-empty"
 ];
 
+const requiredReportSelectors = [
+  ".report-list-toolbar",
+  ".report-detail-grid",
+  ".report-source-pill",
+  ".report-overview-strip",
+  ".report-evidence-list",
+  ".report-evidence-node",
+  ".report-recommendation-list",
+  ".report-recommendation-card",
+  ".report-timeline-table",
+  ".report-student-diagnosis",
+  ".report-strategy-list",
+  ".report-export-panel"
+];
+
+const requiredListManagementSelectors = [
+  ".list-toolbar",
+  ".search-input",
+  ".pagination-controls",
+  ".course-card__actions",
+  ".session-list",
+  ".session-card",
+  ".session-card__actions",
+  ".delete-session-button",
+  ".planner-list-panel",
+  ".bounded-list"
+];
+
 const missingPlannerSelectors = requiredPlannerSelectors.filter((selector) => {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return !new RegExp(`${escaped}(?:[\\s,.:{#]|$)`).test(css);
@@ -84,6 +112,32 @@ const missingSettingsSelectors = requiredSettingsSelectors.filter((selector) => 
 if (missingSettingsSelectors.length) {
   console.error("Missing settings CSS selectors:");
   for (const selector of missingSettingsSelectors) {
+    console.error(`- ${selector}`);
+  }
+  process.exit(1);
+}
+
+const missingReportSelectors = requiredReportSelectors.filter((selector) => {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return !new RegExp(`${escaped}(?:[\\s,.:{#]|$)`).test(css);
+});
+
+if (missingReportSelectors.length) {
+  console.error("Missing report CSS selectors:");
+  for (const selector of missingReportSelectors) {
+    console.error(`- ${selector}`);
+  }
+  process.exit(1);
+}
+
+const missingListManagementSelectors = requiredListManagementSelectors.filter((selector) => {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return !new RegExp(`${escaped}(?:[\\s,.:{#]|$)`).test(css);
+});
+
+if (missingListManagementSelectors.length) {
+  console.error("Missing list-management CSS selectors:");
+  for (const selector of missingListManagementSelectors) {
     console.error(`- ${selector}`);
   }
   process.exit(1);
@@ -121,6 +175,18 @@ const layoutAssertions = [
   {
     name: "planner incident grid uses responsive auto-fit cards",
     ok: /\.incident-grid\s*{[^}]*auto-fit/s.test(css)
+  },
+  {
+    name: "dashboard grid does not stretch side panels to match long lists",
+    ok: /\.dashboard-grid\s*{[^}]*align-items:\s*start/s.test(css)
+  },
+  {
+    name: "course cards keep actions pinned to the bottom",
+    ok: /\.course-card__actions\s*{[^}]*margin-top:\s*auto/s.test(css)
+  },
+  {
+    name: "planner list panel avoids vertically stretched selection cards",
+    ok: /\.planner-list-panel\s*{[^}]*align-items:\s*start/s.test(css)
   }
 ];
 
@@ -133,4 +199,4 @@ if (failedLayouts.length) {
   process.exit(1);
 }
 
-console.log(`UI contract passed (${requiredTrainingRoomSelectors.length + requiredPlannerSelectors.length + requiredSettingsSelectors.length} selectors).`);
+console.log(`UI contract passed (${requiredTrainingRoomSelectors.length + requiredPlannerSelectors.length + requiredSettingsSelectors.length + requiredReportSelectors.length + requiredListManagementSelectors.length} selectors).`);

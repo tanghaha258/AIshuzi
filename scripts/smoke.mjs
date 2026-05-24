@@ -182,6 +182,16 @@ async function run() {
   if (!completed.report?.summary) {
     throw new Error("Completion did not produce a report.");
   }
+  if (!completed.report.evidence?.length || !completed.report.recommendations?.length) {
+    throw new Error("Report 2.0 did not include evidence-bound recommendations.");
+  }
+  if (!completed.report.exportMarkdown?.includes("证据") || !completed.report.exportHtml?.includes("<article")) {
+    throw new Error("Report 2.0 export payloads were not generated.");
+  }
+  const sessionWithReportEvidence = await json(`${baseUrl}/api/sessions/${session.id}`);
+  if (!sessionWithReportEvidence.events?.some((event) => event.type === "report_evidence")) {
+    throw new Error("Report evidence events were not persisted in the classroom timeline.");
+  }
 
   const completedObservationResponse = await fetch(`${baseUrl}/api/sessions/${session.id}/observations`, {
     method: "POST",
@@ -200,7 +210,13 @@ async function run() {
     throw new Error("Completed sessions still accepted observation events.");
   }
 
-  console.log("Smoke check passed: dashboard, session, observation, transcript turn, and report are working.");
+  const deleteResponse = await json(`${baseUrl}/api/sessions/${session.id}`, { method: "DELETE" });
+  if (deleteResponse.ok !== true) {
+    throw new Error("Session deletion did not return ok=true.");
+  }
+  await expectStatus(`${baseUrl}/api/sessions/${session.id}`, 404);
+
+  console.log("Smoke check passed: dashboard, session, deletion, observation, transcript turn, and report are working.");
 }
 
 try {

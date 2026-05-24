@@ -1,4 +1,4 @@
-import { CalendarPlus, Loader2, MonitorPlay, Plus, Save, Sparkles } from "lucide-react";
+import { CalendarPlus, ChevronLeft, ChevronRight, Loader2, MonitorPlay, Plus, Save, Search, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import type { Course, GenerateLessonPlanPayload, LessonPlan, StudentAgent } from "../../shared/types";
@@ -33,6 +33,8 @@ const initialDraft: GenerateLessonPlanPayload = {
   durationMinutes: 10
 };
 
+const setupCoursePageSize = 8;
+
 export function CoursePlannerPage({
   courses,
   students,
@@ -43,6 +45,8 @@ export function CoursePlannerPage({
   const [selectedCourseId, setSelectedCourseId] = useState(courses[0]?.id ?? "");
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>(students.slice(0, 6).map((student) => student.id));
   const [generated, setGenerated] = useState<GeneratedPlanState | null>(null);
+  const [setupCourseQuery, setSetupCourseQuery] = useState("");
+  const [setupCoursePage, setSetupCoursePage] = useState(1);
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
@@ -67,6 +71,19 @@ export function CoursePlannerPage({
   const recommendedIds = useMemo(
     () => new Set(generated?.lessonPlan.recommendedStudentIds ?? []),
     [generated]
+  );
+  const filteredSetupCourses = useMemo(() => {
+    const query = setupCourseQuery.trim().toLowerCase();
+    if (!query) return courses;
+    return courses.filter((course) =>
+      `${course.title} ${course.subject} ${course.grade} ${course.topic} ${course.objectives}`.toLowerCase().includes(query)
+    );
+  }, [courses, setupCourseQuery]);
+  const setupCourseTotalPages = Math.max(1, Math.ceil(filteredSetupCourses.length / setupCoursePageSize));
+  const safeSetupCoursePage = Math.min(setupCoursePage, setupCourseTotalPages);
+  const visibleSetupCourses = filteredSetupCourses.slice(
+    (safeSetupCoursePage - 1) * setupCoursePageSize,
+    safeSetupCoursePage * setupCoursePageSize
   );
 
   async function saveCourse() {
@@ -269,9 +286,31 @@ export function CoursePlannerPage({
           </div>
           <Plus size={24} />
         </div>
-        <div className="planner-grid">
-          <div className="course-select-list">
-            {courses.map((course) => (
+        <div className="list-toolbar">
+          <label className="search-input">
+            <Search size={16} />
+            <input
+              value={setupCourseQuery}
+              placeholder="搜索课程后创建实训"
+              onChange={(event) => {
+                setSetupCourseQuery(event.target.value);
+                setSetupCoursePage(1);
+              }}
+            />
+          </label>
+          <div className="pagination-controls">
+            <span>{filteredSetupCourses.length ? `第 ${safeSetupCoursePage} / ${setupCourseTotalPages} 页，共 ${filteredSetupCourses.length} 门` : "无匹配课程"}</span>
+            <button className="icon-only" type="button" disabled={safeSetupCoursePage <= 1} onClick={() => setSetupCoursePage(safeSetupCoursePage - 1)} title="上一页">
+              <ChevronLeft size={17} />
+            </button>
+            <button className="icon-only" type="button" disabled={safeSetupCoursePage >= setupCourseTotalPages} onClick={() => setSetupCoursePage(safeSetupCoursePage + 1)} title="下一页">
+              <ChevronRight size={17} />
+            </button>
+          </div>
+        </div>
+        <div className="planner-grid planner-list-panel">
+          <div className="course-select-list bounded-list">
+            {visibleSetupCourses.map((course) => (
               <button
                 className={selectedCourse?.id === course.id ? "select-card select-card--active" : "select-card"}
                 key={course.id}
@@ -282,8 +321,9 @@ export function CoursePlannerPage({
                 <span>{course.grade} / {course.subject} / {course.topic}</span>
               </button>
             ))}
+            {!visibleSetupCourses.length ? <div className="empty-state">没有找到匹配课程。</div> : null}
           </div>
-          <div className="student-check-grid">
+          <div className="student-check-grid bounded-list">
             {students.map((student) => (
               <label
                 className={recommendedIds.has(student.id) ? "student-check student-check--recommended" : "student-check"}

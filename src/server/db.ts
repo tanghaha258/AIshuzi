@@ -96,6 +96,15 @@ function rowToEvent(row: Record<string, unknown>): ClassroomEvent {
 }
 
 function rowToReport(row: Record<string, unknown>): EvaluationReport {
+  const overview = json<EvaluationReport["overview"]>(String(row.overview ?? "{}"), {
+    totalEvents: 0,
+    teacherTurns: 0,
+    studentResponses: 0,
+    studentQuestions: 0,
+    systemSuggestions: 0,
+    teacherObservations: 0,
+    durationMinutes: 0
+  });
   return {
     id: String(row.id),
     sessionId: String(row.session_id),
@@ -112,6 +121,16 @@ function rowToReport(row: Record<string, unknown>): EvaluationReport {
     strengths: json<string[]>(String(row.strengths ?? "[]"), []),
     improvements: json<string[]>(String(row.improvements ?? "[]"), []),
     keyMoments: json<string[]>(String(row.key_moments ?? "[]"), []),
+    overview,
+    evidence: json<EvaluationReport["evidence"]>(String(row.evidence ?? "[]"), []),
+    keyTimeline: json<EvaluationReport["keyTimeline"]>(String(row.key_timeline ?? "[]"), []),
+    studentResponses: json<EvaluationReport["studentResponses"]>(String(row.student_responses ?? "[]"), []),
+    teacherStrategyHits: json<EvaluationReport["teacherStrategyHits"]>(String(row.teacher_strategy_hits ?? "[]"), []),
+    recommendations: json<EvaluationReport["recommendations"]>(String(row.recommendations ?? "[]"), []),
+    exportMarkdown: String(row.export_markdown ?? ""),
+    exportHtml: String(row.export_html ?? ""),
+    generatedBy: row.generated_by === "model" ? "model" : "local",
+    fallbackReason: row.fallback_reason ? String(row.fallback_reason) : undefined,
     generatedAt: String(row.generated_at)
   };
 }
@@ -639,14 +658,28 @@ export const store = {
   },
   saveReport(report: EvaluationReport): EvaluationReport {
     db.prepare(`
-      INSERT INTO reports (id, session_id, summary, metrics, strengths, improvements, key_moments, generated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO reports (
+        id, session_id, summary, metrics, strengths, improvements, key_moments,
+        overview, evidence, key_timeline, student_responses, teacher_strategy_hits,
+        recommendations, export_markdown, export_html, generated_by, fallback_reason, generated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(session_id) DO UPDATE SET
         summary = excluded.summary,
         metrics = excluded.metrics,
         strengths = excluded.strengths,
         improvements = excluded.improvements,
         key_moments = excluded.key_moments,
+        overview = excluded.overview,
+        evidence = excluded.evidence,
+        key_timeline = excluded.key_timeline,
+        student_responses = excluded.student_responses,
+        teacher_strategy_hits = excluded.teacher_strategy_hits,
+        recommendations = excluded.recommendations,
+        export_markdown = excluded.export_markdown,
+        export_html = excluded.export_html,
+        generated_by = excluded.generated_by,
+        fallback_reason = excluded.fallback_reason,
         generated_at = excluded.generated_at
     `).run(
       report.id,
@@ -656,6 +689,16 @@ export const store = {
       JSON.stringify(report.strengths),
       JSON.stringify(report.improvements),
       JSON.stringify(report.keyMoments),
+      JSON.stringify(report.overview),
+      JSON.stringify(report.evidence),
+      JSON.stringify(report.keyTimeline),
+      JSON.stringify(report.studentResponses),
+      JSON.stringify(report.teacherStrategyHits),
+      JSON.stringify(report.recommendations),
+      report.exportMarkdown,
+      report.exportHtml,
+      report.generatedBy,
+      report.fallbackReason ?? "",
       report.generatedAt
     );
     return report;

@@ -7,7 +7,7 @@ import { initDb, store } from "./db.js";
 import { callChatCompletion, callJsonCompletion, generateAiStudentTurn, streamChatCompletion, validateProviderConfig } from "./ai/provider.js";
 import { createModelCallLog, sanitizeModelCallLog } from "./ai/observability.js";
 import { buildProviderScenarioPrompt, type ProviderScenario } from "./ai/prompts.js";
-import { buildTurnEvents, calculateMetrics, createReport } from "./domain/simulation.js";
+import { buildTurnEvents, calculateMetrics } from "./domain/simulation.js";
 import {
   advanceRuntimeTick,
   applyStudentMessagesToRuntime,
@@ -21,6 +21,7 @@ import {
   normalizeTranscriptSegment
 } from "./services/transcriptService.js";
 import { buildTeacherObservationEvents } from "./services/observationService.js";
+import { createReportEvidenceEvents, generateEvaluationReport } from "./services/reportGenerator.js";
 import type {
   CreateCoursePayload,
   CreateSessionPayload,
@@ -440,7 +441,7 @@ app.post("/api/sessions/:id/tick", (req, res) => {
   });
 });
 
-app.post("/api/sessions/:id/complete", (req, res) => {
+app.post("/api/sessions/:id/complete", async (req, res) => {
   const session = store.updateSessionStatus(req.params.id, "completed");
   if (!session) {
     res.status(404).json({ message: "Session not found" });
@@ -448,7 +449,29 @@ app.post("/api/sessions/:id/complete", (req, res) => {
   }
   const students = store.listStudents().filter((student) => session.selectedStudentIds.includes(student.id));
   const events = store.listEvents(session.id);
-  const report = store.saveReport(createReport(session, events, students));
+  const provider = store.getProvider();
+  const startedAt = Date.now();
+  const generated = await generateEvaluationReport({
+    provider,
+    session,
+    events,
+    students
+  });
+  store.addModelCallLog(createModelCallLog({
+    scenario: "report",
+    provider,
+    status: generated.usedModel ? "success" : "fallback",
+    usedModel: generated.usedModel,
+    fallbackReason: generated.fallbackReason,
+    durationMs: Date.now() - startedAt,
+    metadata: {
+      sessionId: session.id,
+      eventCount: events.length,
+      evidenceCount: generated.report.evidence.length
+    }
+  }));
+  createReportEvidenceEvents(generated.report).forEach((event) => store.addEvent(event));
+  const report = store.saveReport(generated.report);
   res.json({ session, report });
 });
 
