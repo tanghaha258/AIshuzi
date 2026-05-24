@@ -31,7 +31,8 @@ const emptyData: DashboardData = {
   courses: [],
   students: [],
   sessions: [],
-  reports: []
+  reports: [],
+  lessonPlans: []
 };
 
 function viewFromHash(): View {

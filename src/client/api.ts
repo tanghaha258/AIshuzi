@@ -4,6 +4,8 @@ import type {
   Course,
   DashboardData,
   EvaluationReport,
+  GenerateLessonPlanPayload,
+  LessonPlan,
   ModelProviderConfig,
   StudentAgent,
   StudentRuntimeState,
@@ -29,6 +31,15 @@ export const api = {
   dashboard: () => request<DashboardData>("/api/dashboard"),
   createCourse: (course: Omit<Course, "id" | "createdAt">) =>
     request<Course>("/api/courses", { method: "POST", body: JSON.stringify(course) }),
+  generateLessonPlan: (payload: GenerateLessonPlanPayload) =>
+    request<{
+      course: Course;
+      lessonPlan: LessonPlan;
+      recommendedStudents: StudentAgent[];
+      usedModel: boolean;
+    }>("/api/lesson-plans/generate", { method: "POST", body: JSON.stringify(payload) }),
+  getLessonPlan: (courseId: string) =>
+    request<LessonPlan>(`/api/courses/${courseId}/lesson-plan`),
   upsertStudent: (student: Partial<StudentAgent>) =>
     request<StudentAgent>("/api/students", { method: "POST", body: JSON.stringify(student) }),
   createSession: (courseId: string, selectedStudentIds: string[]) =>

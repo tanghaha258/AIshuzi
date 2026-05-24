@@ -13,7 +13,13 @@ import {
   buildRuntimeStateEvents,
   selectStudentsForTurn
 } from "./services/studentState.js";
-import type { CreateCoursePayload, CreateSessionPayload, UpsertModelProviderPayload } from "../shared/types.js";
+import { generateLessonPlan } from "./services/lessonPlanner.js";
+import type {
+  CreateCoursePayload,
+  CreateSessionPayload,
+  GenerateLessonPlanPayload,
+  UpsertModelProviderPayload
+} from "../shared/types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -50,7 +56,8 @@ app.get("/api/dashboard", (_req, res) => {
     courses: store.listCourses(),
     students: store.listStudents(),
     sessions: store.listSessions(),
-    reports: store.listReports()
+    reports: store.listReports(),
+    lessonPlans: store.listLessonPlans()
   });
 });
 
@@ -78,6 +85,72 @@ app.delete("/api/courses/:id", (req, res) => {
     return;
   }
   res.json({ ok: true });
+});
+
+app.get("/api/courses/:id/lesson-plan", (req, res) => {
+  const lessonPlan = store.getLessonPlan(req.params.id);
+  if (!lessonPlan) {
+    res.status(404).json({ message: "未找到该课程的备课脚本。" });
+    return;
+  }
+  res.json(lessonPlan);
+});
+
+app.post("/api/lesson-plans/generate", async (req, res) => {
+  const body = req.body as Partial<GenerateLessonPlanPayload>;
+  const subject = requireString(body.subject);
+  const grade = requireString(body.grade);
+  const topic = requireString(body.topic);
+  const durationMinutes = Number(body.durationMinutes || 10);
+
+  if (!subject) {
+    res.status(400).json({ message: "请填写学科。" });
+    return;
+  }
+  if (!grade) {
+    res.status(400).json({ message: "请填写年级。" });
+    return;
+  }
+  if (!topic) {
+    res.status(400).json({ message: "请填写试讲主题。" });
+    return;
+  }
+  if (!Number.isFinite(durationMinutes) || durationMinutes < 5 || durationMinutes > 45) {
+    res.status(400).json({ message: "试讲时长需在 5 到 45 分钟之间。" });
+    return;
+  }
+
+  const input: GenerateLessonPlanPayload = {
+    title: requireString(body.title),
+    subject,
+    grade,
+    topic,
+    objectives: requireString(body.objectives, `围绕“${topic}”完成一次微格试讲训练。`),
+    durationMinutes
+  };
+
+  const students = store.listStudents();
+  const { usedModel, planDraft } = await generateLessonPlan(store.getProvider(), input, students);
+  const course = store.createCourse({
+    title: input.title || planDraft.title,
+    subject,
+    grade,
+    topic,
+    objectives: planDraft.objectives.join("；"),
+    durationMinutes
+  });
+  const lessonPlan = store.saveLessonPlan({
+    ...planDraft,
+    courseId: course.id
+  });
+  const recommendedStudents = students.filter((student) => lessonPlan.recommendedStudentIds.includes(student.id));
+
+  res.status(201).json({
+    course,
+    lessonPlan,
+    recommendedStudents,
+    usedModel
+  });
 });
 
 app.get("/api/students", (_req, res) => {

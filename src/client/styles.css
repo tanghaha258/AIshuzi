@@ -320,6 +320,197 @@ meter::-webkit-meter-optimum-value {
   margin-bottom: 14px;
 }
 
+.generated-planner-grid {
+  display: grid;
+  grid-template-columns: minmax(360px, 0.78fr) minmax(0, 1.22fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.planner-form-column {
+  min-width: 0;
+}
+
+.lesson-plan-panel {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #ffffff;
+}
+
+.lesson-plan-panel--empty {
+  min-height: 320px;
+  align-content: center;
+  color: var(--muted);
+  background:
+    linear-gradient(135deg, rgba(20, 124, 120, 0.08), rgba(229, 169, 61, 0.08)),
+    #fbfdfd;
+}
+
+.lesson-plan-panel--empty p,
+.lesson-plan-panel > p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.lesson-plan-panel__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.lesson-plan-panel__header h2 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.25;
+}
+
+.source-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  color: #9a6b16;
+  background: #fff3d8;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.source-pill--model {
+  color: var(--brand-strong);
+  background: #dff5f2;
+}
+
+.lesson-plan-objectives {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.lesson-plan-objectives span,
+.recommended-line {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  color: var(--brand-strong);
+  background: #e8f4f3;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.lesson-stage-table {
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.lesson-stage-table table {
+  width: 100%;
+  min-width: 860px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.lesson-stage-table th,
+.lesson-stage-table td {
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.lesson-stage-table th {
+  color: var(--brand-strong);
+  background: #edf7f6;
+  font-weight: 900;
+}
+
+.lesson-stage-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.lesson-stage-table td:first-child {
+  width: 150px;
+}
+
+.lesson-stage-table td:nth-child(2) {
+  width: 68px;
+  color: var(--brand-strong);
+  font-weight: 900;
+}
+
+.stage-type-pill {
+  display: inline-flex;
+  margin: 0 6px 5px 0;
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: #ffffff;
+  background: var(--brand);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.lesson-stage-table strong {
+  display: block;
+}
+
+.incident-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.incident-card {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid #e3d7bd;
+  border-radius: var(--radius);
+  background: #fffaf0;
+}
+
+.incident-card strong {
+  color: #8f5f0e;
+}
+
+.incident-card span,
+.incident-card small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.incident-card p {
+  margin: 0;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.planner-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.generation-error {
+  margin: 0;
+  color: var(--danger);
+  font-weight: 700;
+}
+
 .course-select-list,
 .student-check-grid {
   display: grid;
@@ -366,6 +557,11 @@ meter::-webkit-meter-optimum-value {
 
 .student-check small {
   color: var(--muted);
+}
+
+.student-check--recommended {
+  border-color: rgba(20, 124, 120, 0.45);
+  background: #edf8f7;
 }
 
 .course-card__meta span,
@@ -1303,6 +1499,7 @@ meter::-webkit-meter-optimum-value {
 @media (max-width: 1180px) {
   .sim-grid,
   .training-grid,
+  .generated-planner-grid,
   .dashboard-grid {
     grid-template-columns: 1fr;
   }
@@ -1341,6 +1538,7 @@ meter::-webkit-meter-optimum-value {
   .metric-strip,
   .course-grid,
   .planner-grid,
+  .incident-grid,
   .student-grid,
   .student-stage__grid,
   .student-stage__deck,

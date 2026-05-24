@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 
-const schemaVersion = 2;
+const schemaVersion = 3;
 
 export function runMigrations(db: DatabaseSync) {
   db.exec("PRAGMA journal_mode = WAL;");
@@ -93,6 +93,25 @@ export function runMigrations(db: DatabaseSync) {
         last_spoke_at TEXT,
         updated_at TEXT NOT NULL,
         PRIMARY KEY (session_id, student_id)
+      );
+      PRAGMA user_version = ${schemaVersion};
+    `);
+  }
+
+  if (currentVersion < 3) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS lesson_plans (
+        id TEXT PRIMARY KEY,
+        course_id TEXT NOT NULL UNIQUE,
+        title TEXT NOT NULL,
+        overview TEXT NOT NULL,
+        objectives TEXT NOT NULL,
+        stages TEXT NOT NULL,
+        incidents TEXT NOT NULL,
+        recommended_student_ids TEXT NOT NULL,
+        generated_by TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
       );
       PRAGMA user_version = ${schemaVersion};
     `);

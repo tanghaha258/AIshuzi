@@ -6,6 +6,7 @@ import type {
   ClassroomEvent,
   Course,
   EvaluationReport,
+  LessonPlan,
   ModelProviderConfig,
   StudentAgent,
   StudentRuntimeState,
@@ -110,6 +111,22 @@ function rowToReport(row: Record<string, unknown>): EvaluationReport {
     improvements: json<string[]>(String(row.improvements ?? "[]"), []),
     keyMoments: json<string[]>(String(row.key_moments ?? "[]"), []),
     generatedAt: String(row.generated_at)
+  };
+}
+
+function rowToLessonPlan(row: Record<string, unknown>): LessonPlan {
+  return {
+    id: String(row.id),
+    courseId: String(row.course_id),
+    title: String(row.title),
+    overview: String(row.overview),
+    objectives: json<string[]>(String(row.objectives ?? "[]"), []),
+    stages: json<LessonPlan["stages"]>(String(row.stages ?? "[]"), []),
+    incidents: json<LessonPlan["incidents"]>(String(row.incidents ?? "[]"), []),
+    recommendedStudentIds: json<string[]>(String(row.recommended_student_ids ?? "[]"), []),
+    generatedBy: row.generated_by === "model" ? "model" : "local",
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at)
   };
 }
 
@@ -330,6 +347,7 @@ export const store = {
     return course;
   },
   deleteCourse(id: string): boolean {
+    db.prepare("DELETE FROM lesson_plans WHERE course_id = ?").run(id);
     const result = db.prepare("DELETE FROM courses WHERE id = ?").run(id);
     return result.changes > 0;
   },
@@ -484,6 +502,51 @@ export const store = {
   },
   listReports(): EvaluationReport[] {
     return (db.prepare("SELECT * FROM reports ORDER BY generated_at DESC").all() as Record<string, unknown>[]).map(rowToReport);
+  },
+  listLessonPlans(): LessonPlan[] {
+    return (db.prepare("SELECT * FROM lesson_plans ORDER BY updated_at DESC").all() as Record<string, unknown>[]).map(rowToLessonPlan);
+  },
+  getLessonPlan(courseId: string): LessonPlan | undefined {
+    const row = db.prepare("SELECT * FROM lesson_plans WHERE course_id = ?").get(courseId) as Record<string, unknown> | undefined;
+    return row ? rowToLessonPlan(row) : undefined;
+  },
+  saveLessonPlan(input: Omit<LessonPlan, "id" | "createdAt" | "updatedAt"> & { id?: string }): LessonPlan {
+    const existing = this.getLessonPlan(input.courseId);
+    const timestamp = now();
+    const lessonPlan: LessonPlan = {
+      ...input,
+      id: input.id ?? existing?.id ?? randomUUID(),
+      createdAt: existing?.createdAt ?? timestamp,
+      updatedAt: timestamp
+    };
+    db.prepare(`
+      INSERT INTO lesson_plans (
+        id, course_id, title, overview, objectives, stages, incidents,
+        recommended_student_ids, generated_by, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(course_id) DO UPDATE SET
+        title = excluded.title,
+        overview = excluded.overview,
+        objectives = excluded.objectives,
+        stages = excluded.stages,
+        incidents = excluded.incidents,
+        recommended_student_ids = excluded.recommended_student_ids,
+        generated_by = excluded.generated_by,
+        updated_at = excluded.updated_at
+    `).run(
+      lessonPlan.id,
+      lessonPlan.courseId,
+      lessonPlan.title,
+      lessonPlan.overview,
+      JSON.stringify(lessonPlan.objectives),
+      JSON.stringify(lessonPlan.stages),
+      JSON.stringify(lessonPlan.incidents),
+      JSON.stringify(lessonPlan.recommendedStudentIds),
+      lessonPlan.generatedBy,
+      lessonPlan.createdAt,
+      lessonPlan.updatedAt
+    );
+    return lessonPlan;
   },
   getReport(sessionId: string): EvaluationReport | undefined {
     const row = db.prepare("SELECT * FROM reports WHERE session_id = ?").get(sessionId) as Record<string, unknown> | undefined;

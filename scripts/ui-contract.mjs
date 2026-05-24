@@ -32,6 +32,29 @@ const missing = requiredTrainingRoomSelectors.filter((selector) => {
   return !new RegExp(`${escaped}(?:[\\s,.:{#]|$)`).test(css);
 });
 
+const requiredPlannerSelectors = [
+  ".generated-planner-grid",
+  ".lesson-plan-panel",
+  ".lesson-plan-panel__header",
+  ".lesson-stage-table",
+  ".incident-grid",
+  ".incident-card",
+  ".planner-actions"
+];
+
+const missingPlannerSelectors = requiredPlannerSelectors.filter((selector) => {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return !new RegExp(`${escaped}(?:[\\s,.:{#]|$)`).test(css);
+});
+
+if (missingPlannerSelectors.length) {
+  console.error("Missing planner CSS selectors:");
+  for (const selector of missingPlannerSelectors) {
+    console.error(`- ${selector}`);
+  }
+  process.exit(1);
+}
+
 if (missing.length) {
   console.error("Missing training-room CSS selectors:");
   for (const selector of missing) {
@@ -60,6 +83,10 @@ const layoutAssertions = [
   {
     name: "teacher column is a scrollable feedback stack",
     ok: /\.teacher-column\s*{[^}]*overflow:\s*auto/s.test(css)
+  },
+  {
+    name: "planner incident grid uses responsive auto-fit cards",
+    ok: /\.incident-grid\s*{[^}]*auto-fit/s.test(css)
   }
 ];
 
@@ -72,4 +99,4 @@ if (failedLayouts.length) {
   process.exit(1);
 }
 
-console.log(`Training-room UI contract passed (${requiredTrainingRoomSelectors.length} selectors).`);
+console.log(`UI contract passed (${requiredTrainingRoomSelectors.length + requiredPlannerSelectors.length} selectors).`);

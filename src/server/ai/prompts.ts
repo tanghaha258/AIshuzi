@@ -1,4 +1,4 @@
-import type { ClassroomEvent, ClassroomMetrics } from "../../shared/types.js";
+import type { ClassroomEvent, ClassroomMetrics, StudentAgent } from "../../shared/types.js";
 import type { GenerateStudentContext } from "./provider.js";
 
 export type ProviderScenario = "student-turn" | "lesson-plan" | "report";
@@ -73,9 +73,22 @@ export function buildLessonPlanPrompt(input: {
   topic: string;
   objectives: string;
   durationMinutes: number;
-}): PromptBundle {
+}, students: StudentAgent[] = []): PromptBundle {
+  const studentProfiles = students.slice(0, 12).map((student) => ({
+    id: student.id,
+    name: student.name,
+    avatar: student.avatar,
+    personality: student.personality,
+    foundation: student.foundation,
+    attention: student.attention,
+    comprehension: student.comprehension,
+    participation: student.participation,
+    behaviorStyle: student.behaviorStyle,
+    status: student.status
+  }));
+
   return {
-    maxTokens: 900,
+    maxTokens: 1200,
     successMessage: "备课方案 JSON 生成正常。",
     messages: [
       {
@@ -87,12 +100,15 @@ export function buildLessonPlanPrompt(input: {
         content: [
           "请生成一份可直接用于微格试讲的备课方案。",
           "输出 JSON 格式必须严格符合：",
-          '{"title":"...","objectives":["..."],"stages":[{"name":"导入","minutes":2,"teacherAction":"...","studentExpected":"..."}],"interactionRisks":["..."],"recommendedStudentAgents":["..."]}',
+          '{"title":"...","overview":"...","objectives":["..."],"stages":[{"type":"导入","name":"...","minutes":2,"teacherAction":"...","expectedStudentResponse":"...","strategyTip":"..."}],"incidents":[{"type":"听不懂","trigger":"...","studentRole":"...","teacherStrategy":"..."}],"recommendedStudentIds":["..."]}',
+          "stages 必须依次覆盖：导入、讲解、提问、练习、总结。incidents 必须覆盖听不懂、抢答、质疑、沉默、跑题中的至少四类。",
+          "recommendedStudentIds 必须从给定学生画像里选择，优先组成差异化课堂。",
           `学科：${input.subject}`,
           `年级：${input.grade}`,
           `主题：${input.topic}`,
           `目标：${input.objectives}`,
-          `时长：${input.durationMinutes} 分钟`
+          `时长：${input.durationMinutes} 分钟`,
+          `可选学生画像：${JSON.stringify(studentProfiles)}`
         ].join("\n")
       }
     ]

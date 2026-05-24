@@ -71,6 +71,44 @@ export interface Course {
   createdAt: string;
 }
 
+export type LessonPlanStageType = "导入" | "讲解" | "提问" | "练习" | "总结";
+
+export type PlannedIncidentType = "听不懂" | "抢答" | "质疑" | "沉默" | "跑题";
+
+export interface LessonPlanStage {
+  id: string;
+  type: LessonPlanStageType;
+  name: string;
+  minutes: number;
+  teacherAction: string;
+  expectedStudentResponse: string;
+  strategyTip: string;
+}
+
+export interface PlannedClassroomIncident {
+  id: string;
+  type: PlannedIncidentType;
+  trigger: string;
+  studentRole: string;
+  teacherStrategy: string;
+}
+
+export interface LessonPlan {
+  id: string;
+  courseId: string;
+  title: string;
+  overview: string;
+  objectives: string[];
+  stages: LessonPlanStage[];
+  incidents: PlannedClassroomIncident[];
+  recommendedStudentIds: string[];
+  generatedBy: "model" | "local";
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type LessonPlanDraft = Omit<LessonPlan, "id" | "courseId" | "createdAt" | "updatedAt">;
+
 export interface TrainingSession {
   id: string;
   courseId: string;
@@ -119,6 +157,7 @@ export interface DashboardData {
   students: StudentAgent[];
   sessions: TrainingSession[];
   reports: EvaluationReport[];
+  lessonPlans: LessonPlan[];
 }
 
 export interface SimulationTurn {
@@ -139,6 +178,15 @@ export interface CreateCoursePayload {
   grade: string;
   objectives: string;
   topic: string;
+  durationMinutes: number;
+}
+
+export interface GenerateLessonPlanPayload {
+  title?: string;
+  subject: string;
+  grade: string;
+  topic: string;
+  objectives: string;
   durationMinutes: number;
 }
 
