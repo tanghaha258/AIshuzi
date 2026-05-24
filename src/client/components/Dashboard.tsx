@@ -16,11 +16,12 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { findReusableSession, sessionStatusLabel } from "../../shared/sessionLifecycle";
-import type { Course, DashboardData, StudentAgent, TrainingSession } from "../../shared/types";
+import type { Course, DashboardData, EvaluationReport, StudentAgent, TrainingSession } from "../../shared/types";
 
 interface DashboardProps {
   data: DashboardData;
   onCreateSession: (courseId: string, studentIds: string[], options?: { forceNew?: boolean }) => void;
+  onDeleteCourse: (courseId: string) => void;
   onDeleteSession: (sessionId: string) => void;
   onOpenSession: (sessionId: string) => void;
   onNavigate: (view: "students" | "reports" | "settings") => void;
@@ -35,23 +36,44 @@ function latestActiveSession(sessions: TrainingSession[]) {
 
 function CourseCard({
   course,
+  reports,
   sessions,
   students,
   onCreateSession,
+  onDeleteCourse,
   onOpenSession
 }: {
   course: Course;
+  reports: EvaluationReport[];
   sessions: TrainingSession[];
   students: StudentAgent[];
   onCreateSession: (courseId: string, studentIds: string[], options?: { forceNew?: boolean }) => void;
+  onDeleteCourse: (courseId: string) => void;
   onOpenSession: (sessionId: string) => void;
 }) {
   const reusableSession = findReusableSession(sessions, course.id);
+  const relatedSessions = sessions.filter((session) => session.courseId === course.id);
+  const relatedSessionIds = new Set(relatedSessions.map((session) => session.id));
+  const relatedReports = reports.filter((report) => relatedSessionIds.has(report.sessionId));
   const defaultStudentIds = students.slice(0, 6).map((student) => student.id);
+
+  function confirmDeleteCourse() {
+    const relationText = relatedSessions.length
+      ? `该课程下已有 ${relatedSessions.length} 次实训、${relatedReports.length} 份报告。删除后历史实训和报告仍会保留，但这个课程入口会从工作台移除。`
+      : "该课程暂无实训记录，删除后会移除课程方案和备课脚本。";
+    const ok = window.confirm(`确定删除“${course.title} / ${course.topic}”这个课程方案吗？\n\n${relationText}`);
+    if (ok) onDeleteCourse(course.id);
+  }
+
   return (
     <article className="course-card">
-      <div className="course-card__body">
+      <div className="course-card__topline">
         <span className="eyebrow">{course.grade} · {course.subject}</span>
+        <button className="icon-only delete-course-button" type="button" onClick={confirmDeleteCourse} title="删除课程方案">
+          <Trash2 size={16} />
+        </button>
+      </div>
+      <div className="course-card__body">
         <h3>{course.title}</h3>
         <p>{course.objectives}</p>
       </div>
@@ -112,7 +134,7 @@ function Pagination({
   );
 }
 
-export function Dashboard({ data, onCreateSession, onDeleteSession, onOpenSession, onNavigate }: DashboardProps) {
+export function Dashboard({ data, onCreateSession, onDeleteCourse, onDeleteSession, onOpenSession, onNavigate }: DashboardProps) {
   const activeSession = latestActiveSession(data.sessions);
   const completed = data.sessions.filter((session) => session.status === "completed").length;
   const [courseQuery, setCourseQuery] = useState("");
@@ -216,9 +238,11 @@ export function Dashboard({ data, onCreateSession, onDeleteSession, onOpenSessio
             <CourseCard
               key={course.id}
               course={course}
+              reports={data.reports}
               sessions={data.sessions}
               students={data.students}
               onCreateSession={onCreateSession}
+              onDeleteCourse={onDeleteCourse}
               onOpenSession={onOpenSession}
             />
           ))}

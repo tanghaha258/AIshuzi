@@ -144,6 +144,11 @@ export default function App() {
     }
   }
 
+  async function deleteCourse(courseId: string) {
+    await api.deleteCourse(courseId);
+    await refresh();
+  }
+
   function handleSessionChange(session: TrainingSession) {
     setActiveSession(session);
     setData((current) => ({
@@ -234,6 +239,7 @@ export default function App() {
           <Dashboard
             data={data}
             onCreateSession={createSession}
+            onDeleteCourse={deleteCourse}
             onDeleteSession={deleteSession}
             onOpenSession={openSession}
             onNavigate={navigate}

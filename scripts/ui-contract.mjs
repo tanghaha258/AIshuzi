@@ -85,6 +85,8 @@ const requiredListManagementSelectors = [
   ".search-input",
   ".pagination-controls",
   ".course-card__actions",
+  ".course-card__topline",
+  ".delete-course-button",
   ".session-list",
   ".session-card",
   ".session-card__actions",

@@ -307,6 +307,18 @@ meter::-webkit-meter-optimum-value {
   gap: 7px;
 }
 
+.course-card__topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.delete-course-button {
+  color: var(--danger);
+  background: #fff1f1;
+}
+
 .course-card__body p {
   display: -webkit-box;
   min-height: 50px;

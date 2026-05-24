@@ -34,6 +34,8 @@ export const api = {
   dashboard: () => request<DashboardData>("/api/dashboard"),
   createCourse: (course: Omit<Course, "id" | "createdAt">) =>
     request<Course>("/api/courses", { method: "POST", body: JSON.stringify(course) }),
+  deleteCourse: (courseId: string) =>
+    request<{ ok: boolean }>(`/api/courses/${courseId}`, { method: "DELETE" }),
   generateLessonPlan: (payload: GenerateLessonPlanPayload) =>
     request<{
       course: Course;
