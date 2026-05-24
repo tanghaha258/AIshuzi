@@ -65,6 +65,7 @@ const requiredSettingsSelectors = [
 
 const requiredReportSelectors = [
   ".report-list-toolbar",
+  ".report-card__actions",
   ".report-detail-grid",
   ".report-source-pill",
   ".report-overview-strip",
@@ -75,7 +76,8 @@ const requiredReportSelectors = [
   ".report-timeline-table",
   ".report-student-diagnosis",
   ".report-strategy-list",
-  ".report-export-panel"
+  ".report-export-panel",
+  ".delete-report-button"
 ];
 
 const requiredListManagementSelectors = [

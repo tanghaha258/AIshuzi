@@ -1708,6 +1708,18 @@ meter::-webkit-meter-optimum-value {
   gap: 12px;
 }
 
+.report-card__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.delete-report-button {
+  min-width: 104px;
+}
+
 .report-source-pill {
   display: inline-flex;
   align-items: center;

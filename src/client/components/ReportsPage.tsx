@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { BarChart3, ChevronLeft, ChevronRight, Clipboard, FileCode2, FileText, Search, Sparkles } from "lucide-react";
+import { BarChart3, ChevronLeft, ChevronRight, Clipboard, FileCode2, FileText, Search, Sparkles, Trash2 } from "lucide-react";
 import {
   Bar,
   BarChart,
@@ -14,11 +14,12 @@ import type { EvaluationReport, TrainingSession } from "../../shared/types";
 interface ReportsPageProps {
   reports: EvaluationReport[];
   sessions: TrainingSession[];
+  onDeleteReport: (reportId: string) => void;
 }
 
 const reportPageSize = 1;
 
-export function ReportsPage({ reports, sessions }: ReportsPageProps) {
+export function ReportsPage({ reports, sessions, onDeleteReport }: ReportsPageProps) {
   const [copiedKey, setCopiedKey] = useState("");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
@@ -51,6 +52,12 @@ export function ReportsPage({ reports, sessions }: ReportsPageProps) {
       report.evidence.map((item) => `${item.actor} ${item.quote}`).join(" "),
       report.recommendations.map((item) => `${item.title} ${item.detail}`).join(" ")
     ].join(" ").toLowerCase();
+  }
+
+  function confirmDeleteReport(report: EvaluationReport) {
+    const session = sessions.find((item) => item.id === report.sessionId);
+    const ok = window.confirm(`确定删除“${session?.courseTitle ?? "微格实训"} / ${session?.topic ?? "课堂诊断"}”这份课后报告吗？实训记录会保留。`);
+    if (ok) onDeleteReport(report.id);
   }
 
   const filteredReports = reports.filter((report) => reportSearchText(report).includes(query.trim().toLowerCase()));
@@ -113,10 +120,16 @@ export function ReportsPage({ reports, sessions }: ReportsPageProps) {
                     <span className="eyebrow">{session?.courseTitle ?? "微格实训"}</span>
                     <h2>{session?.topic ?? "课堂诊断"}</h2>
                   </div>
-                  <span className={report.generatedBy === "model" ? "report-source-pill report-source-pill--model" : "report-source-pill"}>
-                    {report.generatedBy === "model" ? <Sparkles size={15} /> : <FileText size={15} />}
-                    {sourceLabel(report)}
-                  </span>
+                  <div className="report-card__actions">
+                    <span className={report.generatedBy === "model" ? "report-source-pill report-source-pill--model" : "report-source-pill"}>
+                      {report.generatedBy === "model" ? <Sparkles size={15} /> : <FileText size={15} />}
+                      {sourceLabel(report)}
+                    </span>
+                    <button className="danger-button delete-report-button" type="button" onClick={() => confirmDeleteReport(report)}>
+                      <Trash2 size={16} />
+                      删除报告
+                    </button>
+                  </div>
                 </div>
                 {report.fallbackReason ? <div className="ai-generation-status">已切换本地诊断：{report.fallbackReason}</div> : null}
                 <p>{report.summary}</p>

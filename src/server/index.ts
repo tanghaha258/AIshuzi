@@ -327,6 +327,15 @@ app.delete("/api/sessions/:id", (req, res) => {
   res.json({ ok: true });
 });
 
+app.delete("/api/reports/:id", (req, res) => {
+  const deleted = store.deleteReport(req.params.id);
+  if (!deleted) {
+    res.status(404).json({ message: "Report not found" });
+    return;
+  }
+  res.json({ ok: true });
+});
+
 app.post("/api/sessions/:id/start", (req, res) => {
   const session = store.updateSessionStatus(req.params.id, "active");
   if (!session) {
@@ -442,11 +451,16 @@ app.post("/api/sessions/:id/tick", (req, res) => {
 });
 
 app.post("/api/sessions/:id/complete", async (req, res) => {
-  const session = store.updateSessionStatus(req.params.id, "completed");
-  if (!session) {
+  const currentSession = store.getSession(req.params.id);
+  if (!currentSession) {
     res.status(404).json({ message: "Session not found" });
     return;
   }
+  if (currentSession.status === "completed") {
+    res.status(409).json({ message: "该实训已完成，不能重复生成报告。" });
+    return;
+  }
+  const session = store.updateSessionStatus(req.params.id, "completed") ?? currentSession;
   const students = store.listStudents().filter((student) => session.selectedStudentIds.includes(student.id));
   const events = store.listEvents(session.id);
   const provider = store.getProvider();
@@ -470,8 +484,8 @@ app.post("/api/sessions/:id/complete", async (req, res) => {
       evidenceCount: generated.report.evidence.length
     }
   }));
-  createReportEvidenceEvents(generated.report).forEach((event) => store.addEvent(event));
   const report = store.saveReport(generated.report);
+  createReportEvidenceEvents(report).forEach((event) => store.addEvent(event));
   res.json({ session, report });
 });
 

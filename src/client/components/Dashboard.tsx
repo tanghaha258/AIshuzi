@@ -15,11 +15,12 @@ import {
   Users
 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { findReusableSession, sessionStatusLabel } from "../../shared/sessionLifecycle";
 import type { Course, DashboardData, StudentAgent, TrainingSession } from "../../shared/types";
 
 interface DashboardProps {
   data: DashboardData;
-  onCreateSession: (courseId: string, studentIds: string[]) => void;
+  onCreateSession: (courseId: string, studentIds: string[], options?: { forceNew?: boolean }) => void;
   onDeleteSession: (sessionId: string) => void;
   onOpenSession: (sessionId: string) => void;
   onNavigate: (view: "students" | "reports" | "settings") => void;
@@ -34,13 +35,19 @@ function latestActiveSession(sessions: TrainingSession[]) {
 
 function CourseCard({
   course,
+  sessions,
   students,
-  onCreateSession
+  onCreateSession,
+  onOpenSession
 }: {
   course: Course;
+  sessions: TrainingSession[];
   students: StudentAgent[];
-  onCreateSession: (courseId: string, studentIds: string[]) => void;
+  onCreateSession: (courseId: string, studentIds: string[], options?: { forceNew?: boolean }) => void;
+  onOpenSession: (sessionId: string) => void;
 }) {
+  const reusableSession = findReusableSession(sessions, course.id);
+  const defaultStudentIds = students.slice(0, 6).map((student) => student.id);
   return (
     <article className="course-card">
       <div className="course-card__body">
@@ -56,11 +63,16 @@ function CourseCard({
         <button
           className="primary-button"
           type="button"
-          onClick={() => onCreateSession(course.id, students.slice(0, 6).map((student) => student.id))}
+          onClick={() => reusableSession ? onOpenSession(reusableSession.id) : onCreateSession(course.id, defaultStudentIds)}
         >
           <MonitorPlay size={18} />
-          开始实训
+          {reusableSession ? "继续实训" : "开始实训"}
         </button>
+        {reusableSession ? (
+          <button className="ghost-button" type="button" onClick={() => onCreateSession(course.id, defaultStudentIds, { forceNew: true })}>
+            新建一次
+          </button>
+        ) : null}
       </div>
     </article>
   );
@@ -201,7 +213,14 @@ export function Dashboard({ data, onCreateSession, onDeleteSession, onOpenSessio
         </div>
         <div className="course-grid">
           {visibleCourses.map((course) => (
-            <CourseCard key={course.id} course={course} students={data.students} onCreateSession={onCreateSession} />
+            <CourseCard
+              key={course.id}
+              course={course}
+              sessions={data.sessions}
+              students={data.students}
+              onCreateSession={onCreateSession}
+              onOpenSession={onOpenSession}
+            />
           ))}
         </div>
         {!visibleCourses.length ? <div className="empty-state">没有找到匹配课程。</div> : null}
@@ -284,7 +303,7 @@ export function Dashboard({ data, onCreateSession, onDeleteSession, onOpenSessio
                 <span>{session.topic}</span>
               </div>
               <div className="course-card__meta">
-                <span>{session.status === "completed" ? "已完成" : session.status === "active" ? "进行中" : "草稿"}</span>
+                <span>{sessionStatusLabel(session.status)}</span>
                 <span>{new Date(session.createdAt).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
               </div>
               <div className="session-card__actions">

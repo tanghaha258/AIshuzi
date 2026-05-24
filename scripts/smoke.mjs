@@ -193,6 +193,20 @@ async function run() {
     throw new Error("Report evidence events were not persisted in the classroom timeline.");
   }
 
+  await expectStatus(`${baseUrl}/api/sessions/${session.id}/complete`, 409, { method: "POST" });
+
+  const deleteReportResponse = await json(`${baseUrl}/api/reports/${completed.report.id}`, { method: "DELETE" });
+  if (deleteReportResponse.ok !== true) {
+    throw new Error("Report deletion did not return ok=true.");
+  }
+  const sessionAfterReportDelete = await json(`${baseUrl}/api/sessions/${session.id}`);
+  if (sessionAfterReportDelete.report) {
+    throw new Error("Report deletion left the report attached to the session.");
+  }
+  if (sessionAfterReportDelete.events?.some((event) => event.type === "report_evidence")) {
+    throw new Error("Report deletion left report evidence events in the session timeline.");
+  }
+
   const completedObservationResponse = await fetch(`${baseUrl}/api/sessions/${session.id}/observations`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

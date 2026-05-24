@@ -221,6 +221,7 @@ function rowToModelCallLog(row: Record<string, unknown>): ModelCallLog {
 export function initDb() {
   runMigrations(db);
   seedDefaults();
+  pruneOrphanRuntimeStates();
 }
 
 function seedDefaults() {
@@ -384,6 +385,13 @@ function seedDefaults() {
   }
 }
 
+function pruneOrphanRuntimeStates() {
+  db.prepare(`
+    DELETE FROM student_runtime_states
+    WHERE session_id NOT IN (SELECT id FROM sessions)
+  `).run();
+}
+
 export const store = {
   listCourses(): Course[] {
     return (db.prepare("SELECT * FROM courses ORDER BY created_at DESC").all() as Record<string, unknown>[]).map(rowToCourse);
@@ -479,6 +487,7 @@ export const store = {
     return session;
   },
   deleteSession(id: string): boolean {
+    db.prepare("DELETE FROM student_runtime_states WHERE session_id = ?").run(id);
     db.prepare("DELETE FROM events WHERE session_id = ?").run(id);
     db.prepare("DELETE FROM reports WHERE session_id = ?").run(id);
     const result = db.prepare("DELETE FROM sessions WHERE id = ?").run(id);
@@ -561,6 +570,14 @@ export const store = {
   },
   listReports(): EvaluationReport[] {
     return (db.prepare("SELECT * FROM reports ORDER BY generated_at DESC").all() as Record<string, unknown>[]).map(rowToReport);
+  },
+  deleteReport(id: string): boolean {
+    const row = db.prepare("SELECT * FROM reports WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+    if (!row) return false;
+    const sessionId = String(row.session_id);
+    db.prepare("DELETE FROM events WHERE session_id = ? AND type = 'report_evidence'").run(sessionId);
+    const result = db.prepare("DELETE FROM reports WHERE id = ?").run(id);
+    return result.changes > 0;
   },
   listLessonPlans(): LessonPlan[] {
     return (db.prepare("SELECT * FROM lesson_plans ORDER BY updated_at DESC").all() as Record<string, unknown>[]).map(rowToLessonPlan);
@@ -657,6 +674,7 @@ export const store = {
     return row ? rowToReport(row) : undefined;
   },
   saveReport(report: EvaluationReport): EvaluationReport {
+    db.prepare("DELETE FROM events WHERE session_id = ? AND type = 'report_evidence'").run(report.sessionId);
     db.prepare(`
       INSERT INTO reports (
         id, session_id, summary, metrics, strengths, improvements, key_moments,
@@ -665,6 +683,7 @@ export const store = {
       )
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(session_id) DO UPDATE SET
+        id = excluded.id,
         summary = excluded.summary,
         metrics = excluded.metrics,
         strengths = excluded.strengths,

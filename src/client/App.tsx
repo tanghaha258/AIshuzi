@@ -16,6 +16,7 @@ import { SettingsPage } from "./components/SettingsPage";
 import { StudentsPage } from "./components/StudentsPage";
 import { TrainingRoom } from "./components/TrainingRoom";
 import { api } from "./api";
+import { findReusableSession } from "../shared/sessionLifecycle";
 import type {
   ClassroomEvent,
   DashboardData,
@@ -112,7 +113,14 @@ export default function App() {
     navigate("training");
   }
 
-  async function createSession(courseId: string, studentIds: string[]) {
+  async function createSession(courseId: string, studentIds: string[], options: { forceNew?: boolean } = {}) {
+    if (!options.forceNew) {
+      const reusableSession = findReusableSession(data.sessions, courseId);
+      if (reusableSession) {
+        await openSession(reusableSession.id);
+        return;
+      }
+    }
     const session = await api.createSession(courseId, studentIds);
     await refresh();
     await openSession(session.id);
@@ -150,6 +158,11 @@ export default function App() {
       reports: [report, ...current.reports.filter((item) => item.id !== report.id)]
     }));
     navigate("reports");
+  }
+
+  async function deleteReport(reportId: string) {
+    await api.deleteReport(reportId);
+    await refresh();
   }
 
   function handleCourseCreated(course: DashboardData["courses"][number]) {
@@ -250,7 +263,7 @@ export default function App() {
           </main>
         ) : null}
         {view === "students" ? <StudentsPage students={data.students} onSaved={handleStudentSaved} /> : null}
-        {view === "reports" ? <ReportsPage reports={data.reports} sessions={data.sessions} /> : null}
+        {view === "reports" ? <ReportsPage reports={data.reports} sessions={data.sessions} onDeleteReport={deleteReport} /> : null}
         {view === "settings" ? <SettingsPage data={data} /> : null}
       </div>
     </div>

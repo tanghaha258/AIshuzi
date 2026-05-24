@@ -53,6 +53,8 @@ export const api = {
     }),
   deleteSession: (sessionId: string) =>
     request<{ ok: boolean }>(`/api/sessions/${sessionId}`, { method: "DELETE" }),
+  deleteReport: (reportId: string) =>
+    request<{ ok: boolean }>(`/api/reports/${reportId}`, { method: "DELETE" }),
   getSession: (sessionId: string) =>
     request<{ session: TrainingSession; events: ClassroomEvent[]; runtimeStates: StudentRuntimeState[]; report?: EvaluationReport }>(`/api/sessions/${sessionId}`),
   startSession: (sessionId: string) =>

@@ -8,7 +8,7 @@ interface CoursePlannerPageProps {
   courses: Course[];
   students: StudentAgent[];
   onCourseCreated: (course: Course) => void;
-  onCreateSession: (courseId: string, studentIds: string[]) => void;
+  onCreateSession: (courseId: string, studentIds: string[], options?: { forceNew?: boolean }) => void;
 }
 
 interface GeneratedPlanState {
@@ -153,7 +153,7 @@ export function CoursePlannerPage({
 
   function startGeneratedSession() {
     if (!generated || selectedStudentIds.length === 0) return;
-    onCreateSession(generated.course.id, selectedStudentIds);
+    onCreateSession(generated.course.id, selectedStudentIds, { forceNew: true });
   }
 
   return (
@@ -344,7 +344,7 @@ export function CoursePlannerPage({
           className="primary-button"
           type="button"
           disabled={!selectedCourse || selectedStudentIds.length === 0}
-          onClick={() => selectedCourse && onCreateSession(selectedCourse.id, selectedStudentIds)}
+          onClick={() => selectedCourse && onCreateSession(selectedCourse.id, selectedStudentIds, { forceNew: true })}
         >
           <MonitorPlay size={17} />
           创建并进入试讲室
