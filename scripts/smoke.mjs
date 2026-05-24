@@ -54,6 +54,17 @@ async function json(url, options) {
   return response.json();
 }
 
+async function expectStatus(url, status, options) {
+  const response = await fetch(url, {
+    headers: { "Content-Type": "application/json" },
+    ...options
+  });
+  if (response.status !== status) {
+    throw new Error(`${url} returned ${response.status}, expected ${status}`);
+  }
+  return response;
+}
+
 async function run() {
   await waitForHealth();
   const dashboard = await json(`${baseUrl}/api/dashboard`);
@@ -96,6 +107,53 @@ async function run() {
     throw new Error("Turn did not produce student responses and metrics.");
   }
 
+  const observation = await json(`${baseUrl}/api/sessions/${session.id}/observations`, {
+    method: "POST",
+    body: JSON.stringify({
+      source: "mediapipe",
+      faceVisible: false,
+      faceConfidence: 8,
+      headDirection: "down",
+      expressionActivity: 12,
+      stability: 21,
+      capturedAt: new Date().toISOString()
+    })
+  });
+  const observationMetrics = observation.observationEvent?.metadata?.observation;
+  if (observation.observationEvent?.type !== "teacher_observation" || observationMetrics?.faceConfidence !== 8) {
+    throw new Error("Observation route did not persist structured teacher metrics.");
+  }
+  if (observation.suggestionEvent?.type !== "system_suggestion") {
+    throw new Error("Observation route did not return a suggestion for an obvious camera issue.");
+  }
+
+  const sessionWithObservation = await json(`${baseUrl}/api/sessions/${session.id}`);
+  const persistedObservation = sessionWithObservation.events?.find((event) => event.id === observation.observationEvent.id);
+  if (!persistedObservation) {
+    throw new Error("Observation event was not saved in the session event stream.");
+  }
+
+  await expectStatus(`${baseUrl}/api/sessions/${session.id}/observations`, 400, {
+    method: "POST",
+    body: JSON.stringify({})
+  });
+
+  await expectStatus(`${baseUrl}/api/sessions/${session.id}/observations`, 400, {
+    method: "POST",
+    body: JSON.stringify({
+      ...observationMetrics,
+      debug: true
+    })
+  });
+
+  await expectStatus(`${baseUrl}/api/sessions/${session.id}/observations`, 400, {
+    method: "POST",
+    body: JSON.stringify({
+      ...observationMetrics,
+      videoFrame: "data:image/png;base64,abc"
+    })
+  });
+
   const transcript = await json(`${baseUrl}/api/sessions/${session.id}/transcripts`, {
     method: "POST",
     body: JSON.stringify({
@@ -125,7 +183,24 @@ async function run() {
     throw new Error("Completion did not produce a report.");
   }
 
-  console.log("Smoke check passed: dashboard, session, transcript turn, and report are working.");
+  const completedObservationResponse = await fetch(`${baseUrl}/api/sessions/${session.id}/observations`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      source: "fallback",
+      faceVisible: false,
+      faceConfidence: 0,
+      headDirection: "unknown",
+      expressionActivity: 0,
+      stability: 0,
+      capturedAt: new Date().toISOString()
+    })
+  });
+  if (completedObservationResponse.status !== 409) {
+    throw new Error("Completed sessions still accepted observation events.");
+  }
+
+  console.log("Smoke check passed: dashboard, session, observation, transcript turn, and report are working.");
 }
 
 try {

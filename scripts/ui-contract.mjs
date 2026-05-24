@@ -29,7 +29,10 @@ const requiredTrainingRoomSelectors = [
   ".transcript-panel__live",
   ".transcript-segment-list",
   ".speech-status-pill",
-  ".transcript-actions"
+  ".transcript-actions",
+  ".teacher-observation-panel",
+  ".teacher-observation-grid",
+  ".teacher-observation-status"
 ];
 
 const missing = requiredTrainingRoomSelectors.filter((selector) => {

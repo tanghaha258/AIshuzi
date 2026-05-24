@@ -10,6 +10,7 @@ import type {
   ModelProviderConfig,
   StudentAgent,
   StudentRuntimeState,
+  TeacherObservationPayload,
   TranscriptTurnPayload,
   TrainingSession
 } from "../shared/types";
@@ -82,6 +83,14 @@ export const api = {
         fallbackReason: string;
       };
     }>(`/api/sessions/${sessionId}/transcripts`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+  saveTeacherObservation: (sessionId: string, payload: TeacherObservationPayload) =>
+    request<{
+      observationEvent: ClassroomEvent;
+      suggestionEvent?: ClassroomEvent;
+    }>(`/api/sessions/${sessionId}/observations`, {
       method: "POST",
       body: JSON.stringify(payload)
     }),

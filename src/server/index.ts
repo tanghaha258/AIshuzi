@@ -20,6 +20,7 @@ import {
   mergeTranscriptSegments,
   normalizeTranscriptSegment
 } from "./services/transcriptService.js";
+import { buildTeacherObservationEvents } from "./services/observationService.js";
 import type {
   CreateCoursePayload,
   CreateSessionPayload,
@@ -395,6 +396,30 @@ app.post("/api/sessions/:id/transcripts", async (req, res) => {
     });
   } catch (error) {
     res.status(400).json({ message: error instanceof Error ? error.message : "保存转写失败。" });
+  }
+});
+
+app.post("/api/sessions/:id/observations", (req, res) => {
+  const session = store.getSession(req.params.id);
+  if (!session) {
+    res.status(404).json({ message: "Session not found" });
+    return;
+  }
+  if (session.status !== "active") {
+    res.status(409).json({ message: "仅进行中的实训可记录教师观察。" });
+    return;
+  }
+
+  try {
+    const drafts = buildTeacherObservationEvents(session.id, req.body);
+    const observationEvent = store.addEvent(drafts.observationEvent);
+    const suggestionEvent = drafts.suggestionEvent ? store.addEvent(drafts.suggestionEvent) : undefined;
+    res.status(201).json({
+      observationEvent,
+      suggestionEvent
+    });
+  } catch (error) {
+    res.status(400).json({ message: error instanceof Error ? error.message : "保存教师观察失败。" });
   }
 });
 

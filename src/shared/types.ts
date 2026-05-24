@@ -179,6 +179,29 @@ export interface TranscriptTurnPayload {
   sendAsTurn?: boolean;
 }
 
+export type TeacherObservationSource = "mediapipe" | "fallback";
+
+export type TeacherObservationHeadDirection =
+  | "front"
+  | "left"
+  | "right"
+  | "up"
+  | "down"
+  | "unknown";
+
+export interface TeacherObservationPayload {
+  source: TeacherObservationSource;
+  faceVisible: boolean;
+  /** 0-100 */
+  faceConfidence: number;
+  headDirection: TeacherObservationHeadDirection;
+  /** 0-100 */
+  expressionActivity: number;
+  /** 0-100 */
+  stability: number;
+  capturedAt: string;
+}
+
 export interface ClassroomMetrics {
   attention: number;
   confusion: number;

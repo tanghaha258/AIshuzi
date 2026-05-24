@@ -22,6 +22,7 @@ import {
 import { api } from "../api";
 import { useCamera } from "../hooks/useCamera";
 import { useSpeechRecognition } from "../hooks/useSpeechRecognition";
+import { useTeacherVision } from "../hooks/useTeacherVision";
 import { useTranscriptBuffer } from "../hooks/useTranscriptBuffer";
 import { shouldSendTeacherTurnFromKey } from "../utils/teacherInput";
 import type {
@@ -33,6 +34,7 @@ import type {
   TrainingSession
 } from "../../shared/types";
 import { StudentPortrait } from "./training/StudentPortrait";
+import { TeacherObservationPanel } from "./training/TeacherObservationPanel";
 
 interface TrainingRoomProps {
   session: TrainingSession;
@@ -160,10 +162,13 @@ export function TrainingRoom({
   });
   const [submitting, setSubmitting] = useState(false);
   const [cameraEnabled, setCameraEnabled] = useState(false);
+  const [observationError, setObservationError] = useState("");
   const [modelNotice, setModelNotice] = useState("本地模拟已待命");
   const { videoRef, status: cameraStatus } = useCamera(cameraEnabled);
+  const vision = useTeacherVision(cameraEnabled && cameraStatus === "active", videoRef);
   const selectedStudents = students.filter((student) => session.selectedStudentIds.includes(student.id));
   const savedTranscriptIdsRef = useRef<Set<string>>(new Set());
+  const lastSavedObservationRef = useRef<{ signature: string; capturedAt: number } | undefined>(undefined);
   const transcript = useTranscriptBuffer(session.id);
   const speech = useSpeechRecognition(transcript.acceptSegment);
 
@@ -188,6 +193,11 @@ export function TrainingRoom({
   useEffect(() => {
     setRuntimeStates(initialRuntimeStates);
   }, [initialRuntimeStates, session.id]);
+
+  useEffect(() => {
+    lastSavedObservationRef.current = undefined;
+    setObservationError("");
+  }, [session.id]);
 
   useEffect(() => {
     if (session.status !== "active") return undefined;
@@ -226,6 +236,37 @@ export function TrainingRoom({
         transcript.setLastError(error instanceof Error ? error.message : "保存转写片段失败。");
       });
   }, [appendEvents, session.id, transcript, transcript.finalSegments]);
+
+  useEffect(() => {
+    const observation = vision.latest?.payload;
+    if (!observation || session.status !== "active") return;
+
+    const capturedAt = new Date(observation.capturedAt).getTime();
+    const signature = [
+      observation.faceVisible,
+      observation.headDirection,
+      Math.round(observation.expressionActivity / 10),
+      Math.round(observation.stability / 10)
+    ].join(":");
+    const previous = lastSavedObservationRef.current;
+    if (previous && previous.signature === signature && capturedAt - previous.capturedAt < 12000) {
+      return;
+    }
+
+    lastSavedObservationRef.current = { signature, capturedAt };
+    api.saveTeacherObservation(session.id, observation)
+      .then((result) => {
+        appendEvents([
+          result.observationEvent,
+          ...(result.suggestionEvent ? [result.suggestionEvent] : [])
+        ]);
+        setObservationError("");
+      })
+      .catch((error) => {
+        lastSavedObservationRef.current = undefined;
+        setObservationError(error instanceof Error ? error.message : "保存教师观察失败。");
+      });
+  }, [appendEvents, session.id, session.status, vision.latest]);
 
   const timeline = useMemo(
     () => events.filter((event) => event.type !== "classroom_metric").slice(-8).reverse(),
@@ -397,6 +438,13 @@ export function TrainingRoom({
               </div>
             )}
           </div>
+
+          <TeacherObservationPanel
+            status={vision.status}
+            observation={vision.latest?.payload}
+            recording={cameraEnabled && cameraStatus === "active"}
+            error={vision.error || observationError}
+          />
 
           <div className="screen-card lesson-card">
             <div className="screen-card__title">

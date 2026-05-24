@@ -924,6 +924,79 @@ meter::-webkit-meter-optimum-value {
   font-size: 12px;
 }
 
+.teacher-observation-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.teacher-observation-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  color: #85e7d8;
+  background: rgba(26, 104, 102, 0.42);
+  font-size: 11px;
+}
+
+.teacher-observation-status--loading {
+  color: #ffd071;
+  background: rgba(128, 91, 20, 0.38);
+}
+
+.teacher-observation-status--error {
+  color: #ffadb5;
+  background: rgba(138, 41, 49, 0.34);
+}
+
+.teacher-observation-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.teacher-observation-grid div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 8px 6px;
+  border: 1px solid #284656;
+  border-radius: 6px;
+  background: #10212c;
+  text-align: center;
+}
+
+.teacher-observation-grid strong {
+  font-size: 14px;
+  color: #e9f5f5;
+}
+
+.teacher-observation-grid span,
+.teacher-observation-empty,
+.teacher-observation-local {
+  color: #9fb7c8;
+  font-size: 11px;
+}
+
+.teacher-observation-empty {
+  padding: 13px;
+  border: 1px dashed #284656;
+  border-radius: 6px;
+  text-align: center;
+}
+
+.teacher-observation-error {
+  margin: 0;
+  color: #ffc0c7;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.teacher-observation-local {
+  justify-self: end;
+}
+
 .lesson-slide {
   display: grid;
   place-items: center;
