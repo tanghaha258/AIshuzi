@@ -16,10 +16,11 @@
     "test:ui": "node scripts/ui-contract.mjs",
     "test:lesson-planner": "tsx scripts/lesson-planner-contract.ts",
     "test:transcript": "tsx scripts/transcript-contract.ts",
+    "test:training-input": "tsx scripts/training-input-contract.ts",
     "test:ai-observability": "tsx scripts/ai-observability-contract.ts",
     "test:provider": "tsx scripts/provider-contract.ts",
     "smoke": "node scripts/smoke.mjs",
-    "check": "npm run typecheck && npm run build && npm run test:agent-runtime && npm run test:agent-dialogue && npm run test:lesson-planner && npm run test:transcript && npm run test:ui && npm run test:provider && npm run test:ai-observability && npm run smoke",
+    "check": "npm run typecheck && npm run build && npm run test:agent-runtime && npm run test:agent-dialogue && npm run test:lesson-planner && npm run test:transcript && npm run test:training-input && npm run test:ui && npm run test:provider && npm run test:ai-observability && npm run smoke",
     "electron": "echo Electron shell is scaffolded in ./electron and can be wired after web validation.",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

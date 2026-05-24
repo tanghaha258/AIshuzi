@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Camera,
   CheckCircle2,
@@ -23,6 +23,7 @@ import { api } from "../api";
 import { useCamera } from "../hooks/useCamera";
 import { useSpeechRecognition } from "../hooks/useSpeechRecognition";
 import { useTranscriptBuffer } from "../hooks/useTranscriptBuffer";
+import { shouldSendTeacherTurnFromKey } from "../utils/teacherInput";
 import type {
   ClassroomEvent,
   ClassroomMetrics,
@@ -286,6 +287,19 @@ export function TrainingRoom({
     }
   }
 
+  function handleTeacherInputKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (!shouldSendTeacherTurnFromKey({
+      key: event.key,
+      shiftKey: event.shiftKey,
+      isComposing: event.nativeEvent.isComposing
+    })) {
+      return;
+    }
+
+    event.preventDefault();
+    void sendTurn("manual");
+  }
+
   async function sendTranscriptTurn() {
     const segments = transcript.finalSegments;
     if (!segments.length || submitting) return;
@@ -400,6 +414,7 @@ export function TrainingRoom({
             <textarea
               value={teacherText}
               onChange={(event) => setTeacherText(event.target.value)}
+              onKeyDown={handleTeacherInputKeyDown}
               placeholder="输入教师发言，例如：同学们，谁能说说直角三角形里最长的边是哪一条？"
             />
             <div className="input-controls">
