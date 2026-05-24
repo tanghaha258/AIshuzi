@@ -1,4 +1,4 @@
-import { CalendarPlus, ChevronLeft, ChevronRight, Loader2, MonitorPlay, Plus, Save, Search, Sparkles } from "lucide-react";
+import { CalendarPlus, ChevronLeft, ChevronRight, Loader2, MonitorPlay, Plus, Save, Search, Sparkles, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import type { Course, GenerateLessonPlanPayload, LessonPlan, StudentAgent } from "../../shared/types";
@@ -8,6 +8,7 @@ interface CoursePlannerPageProps {
   courses: Course[];
   students: StudentAgent[];
   onCourseCreated: (course: Course) => void;
+  onDeleteCourse: (courseId: string) => void;
   onCreateSession: (courseId: string, studentIds: string[], options?: { forceNew?: boolean }) => void;
 }
 
@@ -39,6 +40,7 @@ export function CoursePlannerPage({
   courses,
   students,
   onCourseCreated,
+  onDeleteCourse,
   onCreateSession
 }: CoursePlannerPageProps) {
   const [draft, setDraft] = useState<GenerateLessonPlanPayload>(initialDraft);
@@ -154,6 +156,16 @@ export function CoursePlannerPage({
   function startGeneratedSession() {
     if (!generated || selectedStudentIds.length === 0) return;
     onCreateSession(generated.course.id, selectedStudentIds, { forceNew: true });
+  }
+
+  function confirmDeleteCourse(course: Course) {
+    const ok = window.confirm(`确定删除“${course.title} / ${course.topic}”这个课程方案吗？\n\n这里只会移除课程方案和备课脚本，历史实训和报告仍会保留。`);
+    if (!ok) return;
+    onDeleteCourse(course.id);
+    if (selectedCourseId === course.id) {
+      const fallback = courses.find((item) => item.id !== course.id);
+      setSelectedCourseId(fallback?.id ?? "");
+    }
   }
 
   return (
@@ -311,15 +323,19 @@ export function CoursePlannerPage({
         <div className="planner-grid planner-list-panel">
           <div className="course-select-list bounded-list">
             {visibleSetupCourses.map((course) => (
-              <button
-                className={selectedCourse?.id === course.id ? "select-card select-card--active" : "select-card"}
-                key={course.id}
-                type="button"
-                onClick={() => setSelectedCourseId(course.id)}
-              >
-                <strong>{course.title}</strong>
-                <span>{course.grade} / {course.subject} / {course.topic}</span>
-              </button>
+              <article className={selectedCourse?.id === course.id ? "select-card-row select-card-row--active" : "select-card-row"} key={course.id}>
+                <button
+                  className="select-card"
+                  type="button"
+                  onClick={() => setSelectedCourseId(course.id)}
+                >
+                  <strong>{course.title}</strong>
+                  <span>{course.grade} / {course.subject} / {course.topic}</span>
+                </button>
+                <button className="icon-only delete-setup-course-button" type="button" onClick={() => confirmDeleteCourse(course)} title="删除课程方案">
+                  <Trash2 size={16} />
+                </button>
+              </article>
             ))}
             {!visibleSetupCourses.length ? <div className="empty-state">没有找到匹配课程。</div> : null}
           </div>

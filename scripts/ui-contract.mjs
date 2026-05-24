@@ -92,6 +92,8 @@ const requiredListManagementSelectors = [
   ".session-card__actions",
   ".delete-session-button",
   ".planner-list-panel",
+  ".select-card-row",
+  ".delete-setup-course-button",
   ".bounded-list"
 ];
 

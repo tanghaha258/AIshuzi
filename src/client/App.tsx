@@ -250,6 +250,7 @@ export default function App() {
             courses={data.courses}
             students={data.students}
             onCourseCreated={handleCourseCreated}
+            onDeleteCourse={deleteCourse}
             onCreateSession={createSession}
           />
         ) : null}

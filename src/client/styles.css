@@ -628,6 +628,13 @@ meter::-webkit-meter-optimum-value {
   padding-right: 2px;
 }
 
+.select-card-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+}
+
 .select-card {
   display: grid;
   gap: 5px;
@@ -640,9 +647,15 @@ meter::-webkit-meter-optimum-value {
   border-radius: var(--radius);
 }
 
-.select-card--active {
+.select-card-row--active .select-card {
   border-color: var(--brand);
   background: #e9f6f5;
+}
+
+.delete-setup-course-button {
+  align-self: stretch;
+  color: var(--danger);
+  background: #fff1f1;
 }
 
 .select-card span {
