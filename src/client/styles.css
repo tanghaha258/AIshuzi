@@ -378,6 +378,11 @@ meter::-webkit-meter-optimum-value {
   top: 14px;
 }
 
+.planner-example-button {
+  width: 100%;
+  margin: -4px 0 12px;
+}
+
 .planner-mode-switch {
   display: inline-grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -504,6 +509,33 @@ meter::-webkit-meter-optimum-value {
   font-weight: 800;
 }
 
+.process-evaluation-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #bfe1dd;
+  border-radius: var(--radius);
+  background: #f0faf8;
+}
+
+.process-evaluation-summary div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.process-evaluation-summary strong {
+  color: var(--brand-strong);
+  font-size: 12px;
+}
+
+.process-evaluation-summary span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .lesson-stage-table {
   max-width: 100%;
   overflow-x: auto;
@@ -514,7 +546,7 @@ meter::-webkit-meter-optimum-value {
 
 .lesson-stage-table table {
   width: 100%;
-  min-width: 1180px;
+  min-width: 1400px;
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -557,6 +589,11 @@ meter::-webkit-meter-optimum-value {
 
 .lesson-stage-table--script {
   width: 260px;
+  color: var(--ink);
+}
+
+.lesson-stage-table--evaluation {
+  width: 190px;
   color: var(--ink);
 }
 
@@ -1210,7 +1247,9 @@ meter::-webkit-meter-optimum-value {
 
 .teacher-input textarea,
 .form-grid textarea,
-.form-grid input {
+.form-grid input,
+.process-evaluation-fields textarea,
+.process-evaluation-fields input {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -1753,6 +1792,35 @@ meter::-webkit-meter-optimum-value {
   resize: vertical;
 }
 
+.process-evaluation-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: -2px 0 14px;
+  padding: 12px;
+  border: 1px solid #c9dfdd;
+  border-radius: var(--radius);
+  background: #f4faf9;
+}
+
+.process-evaluation-fields label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.process-evaluation-fields__wide {
+  grid-column: 1 / -1;
+}
+
+.process-evaluation-fields textarea {
+  min-height: 64px;
+  resize: vertical;
+}
+
 .toggle-line {
   align-content: end;
   grid-template-columns: auto 1fr;
@@ -1833,6 +1901,53 @@ meter::-webkit-meter-optimum-value {
   color: var(--brand-strong);
   font-size: 22px;
   line-height: 1;
+}
+
+.report-process-evaluation {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #bfe1dd;
+  border-radius: var(--radius);
+  background: #f3faf9;
+}
+
+.report-process-evaluation p {
+  color: var(--muted);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.report-process-evaluation__meta {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.report-process-evaluation__meta span,
+.report-process-evaluation__stage-points span,
+.report-process-evaluation__evidence {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 9px;
+  color: var(--muted);
+  border-radius: 6px;
+  background: #ffffff;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.report-process-evaluation__meta strong,
+.report-process-evaluation__evidence strong {
+  color: var(--brand-strong);
+}
+
+.report-process-evaluation__stage-points {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
 }
 
 .report-detail-grid {
@@ -2380,6 +2495,9 @@ meter::-webkit-meter-optimum-value {
   .reports-grid,
   .report-detail-grid,
   .report-evidence-list,
+  .report-process-evaluation__meta,
+  .process-evaluation-summary,
+  .process-evaluation-fields,
   .form-grid,
   .report-columns {
     grid-template-columns: 1fr;

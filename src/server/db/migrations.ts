@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 
-const schemaVersion = 6;
+const schemaVersion = 7;
 
 export function runMigrations(db: DatabaseSync) {
   db.exec("PRAGMA journal_mode = WAL;");
@@ -183,6 +183,14 @@ export function runMigrations(db: DatabaseSync) {
         status TEXT NOT NULL,
         created_at TEXT NOT NULL
       );
+      PRAGMA user_version = ${schemaVersion};
+    `);
+  }
+
+  if (currentVersion < 7) {
+    db.exec(`
+      ALTER TABLE lesson_plans ADD COLUMN process_evaluation TEXT;
+      ALTER TABLE reports ADD COLUMN process_evaluation TEXT;
       PRAGMA user_version = ${schemaVersion};
     `);
   }

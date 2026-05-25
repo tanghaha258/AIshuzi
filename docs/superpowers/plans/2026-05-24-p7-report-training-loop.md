@@ -21,6 +21,16 @@
 
 ---
 
+## Progress Update - 2026-05-26
+
+- P7.1 starts from product logic rather than visuals: lesson-planning fields should be empty by default, with example content shown as placeholders and filled only when the user clicks `填入示例`.
+- P7.1 adds a lightweight process-evaluation design to lesson planning: evaluation focus, evaluation method, peer/self-review prompt, and evidence type.
+- The generated lesson plan should carry process-evaluation guidance at two levels: overall evaluation design and a per-stage evaluation point.
+- The report should summarize the configured process-evaluation design and link it to classroom evidence, so the loop becomes `备课评价设计 -> 试讲事件 -> 课后证据`.
+- Implementation status: backend contracts, UI contracts, typecheck, build, and data lifecycle checks pass locally. Browser plugin visual verification timed out twice, so visual confirmation should be rechecked manually in the running app.
+
+---
+
 ## Current P7-0 Scope: List And Layout Governance
 
 ### Task 1: Workbench Course List Controls
@@ -107,9 +117,38 @@
 - [x] Mark the active training target completed when the linked复训 session completes.
 - [x] Allow historical reports to create复训 sessions even after the original course entry has been deleted.
 
+### Task 7: Planner Examples And Process Evaluation
+
+**Files:**
+- Modify: `src/shared/types.ts`
+- Modify: `src/server/db/migrations.ts`
+- Modify: `src/server/db.ts`
+- Modify: `src/server/index.ts`
+- Modify: `src/server/ai/prompts.ts`
+- Modify: `src/server/services/lessonPlanner.ts`
+- Modify: `src/server/services/reportGenerator.ts`
+- Modify: `src/client/components/CoursePlannerPage.tsx`
+- Modify: `src/client/components/planner/LessonPlanPanel.tsx`
+- Modify: `src/client/components/ReportsPage.tsx`
+- Modify: `src/client/styles.css`
+- Test: `scripts/lesson-planner-contract.ts`
+- Test: `scripts/report-generator-contract.ts`
+- Test: `scripts/ui-contract.mjs`
+
+- [x] Convert planner defaults to empty input values and move demo content into placeholders.
+- [x] Add a `填入示例` action that deliberately populates a full example lesson.
+- [x] Add a process-evaluation design object to lesson-plan generation payloads and persisted lesson plans.
+- [x] Generate per-stage process-evaluation points in local and model lesson plans.
+- [x] Show the process-evaluation design and stage evaluation points in the generated script panel.
+- [x] Carry the lesson-plan process-evaluation design into the completed report.
+- [x] Show a process-evaluation summary in the report detail view, including evidence IDs for review.
+
 ## Verification
 
 - [x] `npm run test:ui`
+- [x] `npm run test:lesson-planner`
+- [x] `npm run test:report-generator`
+- [x] `npm run test:data-lifecycle`
 - [x] `npm run test:report-evidence-context`
 - [x] `npm run test:training-target`
 - [x] `npm run typecheck`

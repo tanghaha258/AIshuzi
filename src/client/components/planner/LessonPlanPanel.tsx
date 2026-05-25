@@ -49,6 +49,27 @@ export function LessonPlanPanel({
         ))}
       </div>
 
+      {lessonPlan.processEvaluation ? (
+        <div className="process-evaluation-summary">
+          <div>
+            <strong>过程性评价</strong>
+            <span>{lessonPlan.processEvaluation.focus}</span>
+          </div>
+          <div>
+            <strong>评价方式</strong>
+            <span>{lessonPlan.processEvaluation.method}</span>
+          </div>
+          <div>
+            <strong>互评提示</strong>
+            <span>{lessonPlan.processEvaluation.peerReviewPrompt}</span>
+          </div>
+          <div>
+            <strong>证据类型</strong>
+            <span>{lessonPlan.processEvaluation.evidenceTypes.join("、")}</span>
+          </div>
+        </div>
+      ) : null}
+
       <div className="lesson-stage-table">
         <table>
           <thead>
@@ -59,6 +80,7 @@ export function LessonPlanPanel({
               <th>教师动作</th>
               <th className="lesson-stage-table--script">具体做法/话术</th>
               <th>学生反应</th>
+              <th className="lesson-stage-table--evaluation">过程评价点</th>
               <th>策略</th>
             </tr>
           </thead>
@@ -74,6 +96,7 @@ export function LessonPlanPanel({
                 <td>{stage.teacherAction}</td>
                 <td className="lesson-stage-table--script">{stage.actionScript}</td>
                 <td>{stage.expectedStudentResponse}</td>
+                <td className="lesson-stage-table--evaluation">{stage.processEvaluationPoint}</td>
                 <td>{stage.strategyTip}</td>
               </tr>
             ))}

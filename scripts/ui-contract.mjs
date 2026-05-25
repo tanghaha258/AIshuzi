@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 
 const css = readFileSync("src/client/styles.css", "utf8");
+const plannerSource = readFileSync("src/client/components/CoursePlannerPage.tsx", "utf8");
 
 const requiredTrainingRoomSelectors = [
   ".training-grid",
@@ -51,6 +52,10 @@ const requiredPlannerSelectors = [
   ".lesson-stage-table",
   ".lesson-stage-table--method",
   ".lesson-stage-table--script",
+  ".lesson-stage-table--evaluation",
+  ".planner-example-button",
+  ".process-evaluation-fields",
+  ".process-evaluation-summary",
   ".incident-grid",
   ".incident-card",
   ".planner-actions"
@@ -79,6 +84,7 @@ const requiredReportSelectors = [
   ".report-context-event--target",
   ".report-recommendation-list",
   ".report-recommendation-card",
+  ".report-process-evaluation",
   ".training-target-button",
   ".report-timeline-table",
   ".report-student-diagnosis",
@@ -196,6 +202,12 @@ const layoutAssertions = [
   {
     name: "lesson script table scrolls inside the panel instead of clipping the page",
     ok: /\.lesson-plan-panel\s*{[^}]*overflow:\s*hidden/s.test(css) && /\.lesson-stage-table\s*{[^}]*overflow-x:\s*auto/s.test(css)
+  },
+  {
+    name: "planner defaults are empty and example content is opt-in",
+    ok: /const emptyDraft[\s\S]*subject:\s*""[\s\S]*grade:\s*""[\s\S]*topic:\s*""/.test(plannerSource)
+      && /const exampleDraft[\s\S]*勾股定理的生活化理解/.test(plannerSource)
+      && /planner-example-button/.test(plannerSource)
   },
   {
     name: "dashboard grid does not stretch side panels to match long lists",

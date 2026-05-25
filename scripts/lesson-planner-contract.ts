@@ -14,7 +14,13 @@ const input: GenerateLessonPlanPayload = {
   grade: "八年级",
   topic: "勾股定理的生活化理解",
   objectives: "学生能够用生活例子解释直角三角形三边关系，并完成一次即时判断。",
-  durationMinutes: 10
+  durationMinutes: 10,
+  processEvaluation: {
+    focus: "学生能否说出设元依据和等量关系",
+    method: "教师观察 + 学生自评 + 同伴互评",
+    peerReviewPrompt: "请同桌指出对方是否说清了依据，并补充一个改进建议。",
+    evidenceTypes: ["学生复述", "追问回应", "同伴反馈"]
+  }
 };
 
 const students: StudentAgent[] = [
@@ -118,6 +124,9 @@ assert.ok(localPlan.stages.every((stage) => stage.teachingMethod));
 assert.ok(localPlan.stages.some((stage) => /情境|导入|支架|问题|诊断|归纳/.test(stage.teachingMethod)));
 assert.ok(localPlan.stages.every((stage) => stage.actionScript && stage.actionScript.length > stage.teacherAction.length));
 assert.ok(localPlan.stages.some((stage) => /老师|板书|追问|练习|学生/.test(stage.actionScript)));
+assert.equal(localPlan.processEvaluation?.focus, input.processEvaluation?.focus);
+assert.ok(localPlan.processEvaluation?.evidenceTypes.includes("同伴反馈"));
+assert.ok(localPlan.stages.every((stage) => stage.processEvaluationPoint && stage.processEvaluationPoint.length >= 8));
 assert.equal(
   localPlan.stages.reduce((sum, stage) => sum + stage.minutes, 0),
   input.durationMinutes
@@ -136,10 +145,17 @@ const normalized = normalizeLessonPlanResult(
         minutes: 50,
         teachingMethod: "情境导入法",
         teacherAction: "出示校园路线问题",
-        actionScript: "老师出示：操场长 40 米、宽 30 米，沿对角线走到对面至少要走多少米？请学生先估一估。"
+        actionScript: "老师出示：操场长 40 米、宽 30 米，沿对角线走到对面至少要走多少米？请学生先估一估。",
+        processEvaluationPoint: "观察学生能否先找直角和斜边，再说明计算依据。"
       },
       { name: "提问", minutes: -2, expectedStudentResponse: "学生说出最长边" }
     ],
+    processEvaluation: {
+      focus: "学生能否解释直角边与斜边",
+      method: "课堂追问与同伴复述",
+      peerReviewPrompt: "请同桌判断对方是否指出了斜边。",
+      evidenceTypes: ["学生复述"]
+    },
     incidents: [
       { type: "跑题", trigger: "学生讨论操场路线", studentRole: "走神型" },
       { type: "未知类型", trigger: "", teacherStrategy: "" }
@@ -157,6 +173,8 @@ assert.ok(normalized.stages.every((stage) => stage.teachingMethod));
 assert.equal(normalized.stages[0].teachingMethod, "情境导入法");
 assert.ok(normalized.stages.every((stage) => stage.actionScript));
 assert.match(normalized.stages[0].actionScript, /操场|40|30/);
+assert.equal(normalized.processEvaluation?.method, "课堂追问与同伴复述");
+assert.match(normalized.stages[0].processEvaluationPoint ?? "", /直角|斜边/);
 assert.equal(
   normalized.stages.reduce((sum, stage) => sum + stage.minutes, 0),
   input.durationMinutes
@@ -259,8 +277,35 @@ const promptText = buildLessonPlanPrompt(
   students
 ).messages.map((message) => message.content).join("\n");
 assert.match(promptText, /actionScript/);
+assert.match(promptText, /processEvaluation/);
+assert.match(promptText, /processEvaluationPoint/);
 assert.match(promptText, /具体题目|课堂话术|板书|追问/);
 assert.match(promptText, /禁止|不要/);
 assert.match(promptText, /贴近生活|引导学生|围绕目标/);
+assert.match(promptText, /同伴互评|过程性评价|学生复述/);
+
+const emptyProcessPromptText = buildLessonPlanPrompt(
+  {
+    subject: "数学",
+    grade: "八年级",
+    topic: "勾股定理的生活化理解",
+    objectives: "",
+    durationMinutes: 10,
+    processEvaluation: {
+      focus: "",
+      method: "",
+      peerReviewPrompt: "",
+      evidenceTypes: []
+    }
+  },
+  students
+).messages.map((message) => message.content).join("\n");
+assert.match(emptyProcessPromptText, /过程性评价重点：学生能否说清关键依据和思考过程/);
+assert.match(emptyProcessPromptText, /过程性评价方式：教师观察 \+ 学生自评 \+ 同伴互评/);
+assert.match(emptyProcessPromptText, /过程证据类型：学生复述、追问回应、同伴反馈/);
+assert.doesNotMatch(emptyProcessPromptText, /过程性评价重点：\s*\n/);
+assert.doesNotMatch(emptyProcessPromptText, /过程性评价方式：\s*\n/);
+assert.doesNotMatch(emptyProcessPromptText, /同伴\/自评提示：\s*\n/);
+assert.doesNotMatch(emptyProcessPromptText, /过程证据类型：\s*\n/);
 
 console.log("Lesson planner contract passed.");

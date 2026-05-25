@@ -216,7 +216,17 @@ app.post("/api/lesson-plans/generate", async (req, res) => {
     grade,
     topic,
     objectives: requireString(body.objectives, `围绕“${topic}”完成一次微格试讲训练。`),
-    durationMinutes
+    durationMinutes,
+    processEvaluation: body.processEvaluation && typeof body.processEvaluation === "object"
+      ? {
+        focus: requireString(body.processEvaluation.focus),
+        method: requireString(body.processEvaluation.method),
+        peerReviewPrompt: requireString(body.processEvaluation.peerReviewPrompt),
+        evidenceTypes: Array.isArray(body.processEvaluation.evidenceTypes)
+          ? body.processEvaluation.evidenceTypes.map((item) => String(item).trim()).filter(Boolean)
+          : []
+      }
+      : undefined
   };
 
   const students = store.listStudents();
@@ -484,13 +494,15 @@ app.post("/api/sessions/:id/complete", async (req, res) => {
   const session = store.updateSessionStatus(req.params.id, "completed") ?? currentSession;
   const students = store.listStudents().filter((student) => session.selectedStudentIds.includes(student.id));
   const events = store.listEvents(session.id);
+  const lessonPlan = store.getLessonPlan(session.courseId);
   const provider = store.getProvider();
   const startedAt = Date.now();
   const generated = await generateEvaluationReport({
     provider,
     session,
     events,
-    students
+    students,
+    lessonPlan
   });
   store.addModelCallLog(createModelCallLog({
     scenario: "report",

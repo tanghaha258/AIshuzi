@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import { findReusableSession, sessionStatusLabel } from "../src/shared/sessionLifecycle.js";
-import type { EvaluationReport, TrainingSession } from "../src/shared/types.js";
+import type { EvaluationReport, LessonPlan, ReportProcessEvaluation, TrainingSession } from "../src/shared/types.js";
 
 const lifecycleDb = path.resolve("data/data-lifecycle-contract.db");
 mkdirSync(path.dirname(lifecycleDb), { recursive: true });
@@ -14,7 +14,17 @@ process.env.DATABASE_PATH = "data/data-lifecycle-contract.db";
 
 const { initDb, store } = await import("../src/server/db.js");
 
-function makeReport(id: string, sessionId: string): EvaluationReport {
+const processEvaluation: ReportProcessEvaluation = {
+  focus: "学生能否说清关键依据和思考过程",
+  method: "教师观察 + 学生自评 + 同伴互评",
+  peerReviewPrompt: "请同桌指出对方是否说清依据，并补充一个改进建议。",
+  evidenceTypes: ["学生复述", "追问回应", "同伴反馈"],
+  stagePoints: ["导入：观察学生能否说出情境中的关键条件。"],
+  evidenceEventIds: ["event-process-evaluation"],
+  summary: "本次报告已汇总过程性评价与同伴互评证据。"
+};
+
+function makeReport(id: string, sessionId: string, includeProcessEvaluation = false): EvaluationReport {
   return {
     id,
     sessionId,
@@ -45,6 +55,7 @@ function makeReport(id: string, sessionId: string): EvaluationReport {
     studentResponses: [],
     teacherStrategyHits: [],
     recommendations: [],
+    processEvaluation: includeProcessEvaluation ? processEvaluation : undefined,
     exportMarkdown: "# 课堂报告",
     exportHtml: "<article>课堂报告</article>",
     generatedBy: "local",
@@ -100,6 +111,44 @@ const course = store.createCourse({
   topic: "删除实训与报告",
   durationMinutes: 10
 });
+
+const savedLessonPlan = store.saveLessonPlan({
+  courseId: course.id,
+  title: "数据生命周期测试课微格脚本",
+  overview: "用于验证备课过程性评价持久化。",
+  objectives: ["验证过程性评价持久化"],
+  stages: [
+    {
+      id: "stage-intro",
+      type: "导入",
+      name: "导入：生活情境",
+      minutes: 2,
+      teachingMethod: "情境导入法",
+      teacherAction: "提出一个生活问题。",
+      actionScript: "老师出示生活问题，请学生先说依据。",
+      expectedStudentResponse: "学生能尝试复述关键条件。",
+      strategyTip: "先收集想法，再追问依据。",
+      processEvaluationPoint: "观察学生能否说出情境中的关键条件。"
+    }
+  ],
+  incidents: [],
+  recommendedStudentIds: students.map((student) => student.id),
+  processEvaluation,
+  generatedBy: "local",
+  planningMode: "free-topic"
+});
+const persistedLessonPlan = store.getLessonPlan(course.id) as LessonPlan;
+assert.equal(persistedLessonPlan.id, savedLessonPlan.id);
+assert.equal(persistedLessonPlan.processEvaluation?.focus, processEvaluation.focus);
+assert.deepEqual(persistedLessonPlan.processEvaluation?.evidenceTypes, processEvaluation.evidenceTypes);
+assert.equal(persistedLessonPlan.stages[0].processEvaluationPoint, "观察学生能否说出情境中的关键条件。");
+
+const processReportSession = store.createSession(course, students.map((student) => student.id));
+store.saveReport(makeReport("report-process-evaluation", processReportSession.id, true));
+const persistedReport = store.getReport(processReportSession.id);
+assert.equal(persistedReport?.processEvaluation?.summary, processEvaluation.summary);
+assert.deepEqual(persistedReport?.processEvaluation?.stagePoints, processEvaluation.stagePoints);
+assert.ok(store.listReports().some((report) => report.processEvaluation?.focus === processEvaluation.focus));
 
 const session = store.createSession(course, students.map((student) => student.id));
 store.ensureRuntimeStates(session.id, students);

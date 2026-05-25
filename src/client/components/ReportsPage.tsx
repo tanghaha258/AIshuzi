@@ -245,6 +245,29 @@ export function ReportsPage({ reports, sessions, onDeleteReport, onCreateTrainin
                   <span><strong>{report.overview.durationMinutes > 0 ? report.overview.durationMinutes : "<1"}</strong>分钟</span>
                 </div>
 
+                {report.processEvaluation ? (
+                  <div className="report-process-evaluation">
+                    <div className="report-section-title">
+                      <Sparkles size={18} />
+                      <h3>过程性评价与互评证据</h3>
+                    </div>
+                    <p>{report.processEvaluation.summary}</p>
+                    <div className="report-process-evaluation__meta">
+                      <span><strong>评价重点</strong>{report.processEvaluation.focus}</span>
+                      <span><strong>评价方式</strong>{report.processEvaluation.method}</span>
+                      <span><strong>互评提示</strong>{report.processEvaluation.peerReviewPrompt}</span>
+                      <span><strong>证据类型</strong>{report.processEvaluation.evidenceTypes.join("、")}</span>
+                    </div>
+                    <div className="report-process-evaluation__stage-points">
+                      {report.processEvaluation.stagePoints.map((item) => <span key={item}>{item}</span>)}
+                    </div>
+                    <div className="report-process-evaluation__evidence">
+                      <strong>关联证据：</strong>
+                      {report.processEvaluation.evidenceEventIds.map((eventId) => evidenceByEventId.get(eventId)?.actor ?? eventId).join("、")}
+                    </div>
+                  </div>
+                ) : null}
+
                 <div className="report-detail-grid">
                   <div className="report-chart">
                     <div className="report-section-title">

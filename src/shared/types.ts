@@ -77,6 +77,13 @@ export type PlannedIncidentType = "听不懂" | "抢答" | "质疑" | "沉默" |
 
 export type PlanningMode = "free-topic" | "textbook";
 
+export interface ProcessEvaluationDesign {
+  focus: string;
+  method: string;
+  peerReviewPrompt: string;
+  evidenceTypes: string[];
+}
+
 export interface LessonPlanStage {
   id: string;
   type: LessonPlanStageType;
@@ -87,6 +94,7 @@ export interface LessonPlanStage {
   actionScript: string;
   expectedStudentResponse: string;
   strategyTip: string;
+  processEvaluationPoint: string;
 }
 
 export interface PlannedClassroomIncident {
@@ -106,6 +114,7 @@ export interface LessonPlan {
   stages: LessonPlanStage[];
   incidents: PlannedClassroomIncident[];
   recommendedStudentIds: string[];
+  processEvaluation?: ProcessEvaluationDesign;
   generatedBy: "model" | "local";
   planningMode: PlanningMode;
   textbookVersion?: string;
@@ -242,6 +251,7 @@ export interface EvaluationReport {
   studentResponses: StudentResponseSummary[];
   teacherStrategyHits: TeacherStrategyHit[];
   recommendations: EvidenceBoundRecommendation[];
+  processEvaluation?: ReportProcessEvaluation;
   exportMarkdown: string;
   exportHtml: string;
   generatedBy: "model" | "local";
@@ -315,6 +325,12 @@ export interface EvidenceBoundRecommendation {
   evidenceEventIds: string[];
 }
 
+export interface ReportProcessEvaluation extends ProcessEvaluationDesign {
+  stagePoints: string[];
+  evidenceEventIds: string[];
+  summary: string;
+}
+
 export interface DashboardData {
   courses: Course[];
   students: StudentAgent[];
@@ -357,6 +373,7 @@ export interface GenerateLessonPlanPayload {
   topic: string;
   objectives: string;
   durationMinutes: number;
+  processEvaluation?: ProcessEvaluationDesign;
 }
 
 export interface UpsertModelProviderPayload {

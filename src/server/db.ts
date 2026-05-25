@@ -10,6 +10,7 @@ import type {
   LessonPlanStage,
   ModelCallLog,
   ModelProviderConfig,
+  ProcessEvaluationDesign,
   ReportEvidenceContext,
   StudentAgent,
   StudentRuntimeState,
@@ -129,6 +130,7 @@ function rowToReport(row: Record<string, unknown>): EvaluationReport {
     studentResponses: json<EvaluationReport["studentResponses"]>(String(row.student_responses ?? "[]"), []),
     teacherStrategyHits: json<EvaluationReport["teacherStrategyHits"]>(String(row.teacher_strategy_hits ?? "[]"), []),
     recommendations: json<EvaluationReport["recommendations"]>(String(row.recommendations ?? "[]"), []),
+    processEvaluation: json<EvaluationReport["processEvaluation"]>(String(row.process_evaluation ?? ""), undefined),
     exportMarkdown: String(row.export_markdown ?? ""),
     exportHtml: String(row.export_html ?? ""),
     generatedBy: row.generated_by === "model" ? "model" : "local",
@@ -145,12 +147,36 @@ const defaultTeachingMethods: Record<LessonPlanStage["type"], string> = {
   总结: "归纳建构法"
 };
 
+const defaultStageEvaluationPoints: Record<LessonPlanStage["type"], string> = {
+  导入: "观察学生能否说出情境中的关键条件。",
+  讲解: "检查学生能否复述关键步骤和依据。",
+  提问: "记录学生追问、补充和同伴回应。",
+  练习: "收集学生迁移应用和同伴反馈证据。",
+  总结: "用学生自评或出口条确认最终理解。"
+};
+
 function normalizeLessonStages(stages: LessonPlan["stages"]): LessonPlan["stages"] {
   return stages.map((stage) => ({
     ...stage,
     teachingMethod: stage.teachingMethod || defaultTeachingMethods[stage.type] || "互动讲解法",
-    actionScript: stage.actionScript || stage.teacherAction
+    actionScript: stage.actionScript || stage.teacherAction,
+    processEvaluationPoint: stage.processEvaluationPoint || defaultStageEvaluationPoints[stage.type] || "记录学生过程表现和同伴反馈。"
   }));
+}
+
+function rowProcessEvaluation(row: Record<string, unknown>): ProcessEvaluationDesign | undefined {
+  const parsed = json<ProcessEvaluationDesign | undefined>(String(row.process_evaluation ?? ""), undefined);
+  if (!parsed?.focus && !parsed?.method && !parsed?.peerReviewPrompt && !parsed?.evidenceTypes?.length) {
+    return undefined;
+  }
+  return {
+    focus: parsed.focus || "学生能否说清关键依据和思考过程",
+    method: parsed.method || "教师观察 + 学生自评 + 同伴互评",
+    peerReviewPrompt: parsed.peerReviewPrompt || "请同伴指出依据是否清楚，并给出一个改进建议。",
+    evidenceTypes: Array.isArray(parsed.evidenceTypes) && parsed.evidenceTypes.length
+      ? parsed.evidenceTypes
+      : ["学生复述", "追问回应", "同伴反馈"]
+  };
 }
 
 function rowToLessonPlan(row: Record<string, unknown>): LessonPlan {
@@ -163,6 +189,7 @@ function rowToLessonPlan(row: Record<string, unknown>): LessonPlan {
     stages: normalizeLessonStages(json<LessonPlan["stages"]>(String(row.stages ?? "[]"), [])),
     incidents: json<LessonPlan["incidents"]>(String(row.incidents ?? "[]"), []),
     recommendedStudentIds: json<string[]>(String(row.recommended_student_ids ?? "[]"), []),
+    processEvaluation: rowProcessEvaluation(row),
     generatedBy: row.generated_by === "model" ? "model" : "local",
     planningMode: row.planning_mode === "textbook" ? "textbook" : "free-topic",
     textbookVersion: row.textbook_version ? String(row.textbook_version) : undefined,
@@ -709,9 +736,9 @@ export const store = {
     db.prepare(`
       INSERT INTO lesson_plans (
         id, course_id, title, overview, objectives, stages, incidents,
-        recommended_student_ids, generated_by, planning_mode, textbook_version, volume,
+        recommended_student_ids, process_evaluation, generated_by, planning_mode, textbook_version, volume,
         unit, lesson, period, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(course_id) DO UPDATE SET
         title = excluded.title,
         overview = excluded.overview,
@@ -719,6 +746,7 @@ export const store = {
         stages = excluded.stages,
         incidents = excluded.incidents,
         recommended_student_ids = excluded.recommended_student_ids,
+        process_evaluation = excluded.process_evaluation,
         generated_by = excluded.generated_by,
         planning_mode = excluded.planning_mode,
         textbook_version = excluded.textbook_version,
@@ -736,6 +764,7 @@ export const store = {
       JSON.stringify(lessonPlan.stages),
       JSON.stringify(lessonPlan.incidents),
       JSON.stringify(lessonPlan.recommendedStudentIds),
+      JSON.stringify(lessonPlan.processEvaluation ?? null),
       lessonPlan.generatedBy,
       lessonPlan.planningMode,
       lessonPlan.textbookVersion ?? null,
@@ -790,9 +819,9 @@ export const store = {
       INSERT INTO reports (
         id, session_id, summary, metrics, strengths, improvements, key_moments,
         overview, evidence, key_timeline, student_responses, teacher_strategy_hits,
-        recommendations, export_markdown, export_html, generated_by, fallback_reason, generated_at
+        recommendations, process_evaluation, export_markdown, export_html, generated_by, fallback_reason, generated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(session_id) DO UPDATE SET
         id = excluded.id,
         summary = excluded.summary,
@@ -806,6 +835,7 @@ export const store = {
         student_responses = excluded.student_responses,
         teacher_strategy_hits = excluded.teacher_strategy_hits,
         recommendations = excluded.recommendations,
+        process_evaluation = excluded.process_evaluation,
         export_markdown = excluded.export_markdown,
         export_html = excluded.export_html,
         generated_by = excluded.generated_by,
@@ -825,6 +855,7 @@ export const store = {
       JSON.stringify(report.studentResponses),
       JSON.stringify(report.teacherStrategyHits),
       JSON.stringify(report.recommendations),
+      JSON.stringify(report.processEvaluation ?? null),
       report.exportMarkdown,
       report.exportHtml,
       report.generatedBy,

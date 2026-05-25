@@ -6,6 +6,7 @@ import type {
   ModelProviderConfig,
   PlannedClassroomIncident,
   PlannedIncidentType,
+  ProcessEvaluationDesign,
   StudentAgent
 } from "../../shared/types.js";
 import { summarizeModelFailure } from "../ai/observability.js";
@@ -65,6 +66,45 @@ function splitObjectives(objectives: string) {
     .map((item) => item.trim())
     .filter(Boolean);
   return parts.length ? parts.slice(0, 4) : ["完成一个聚焦明确的微格试讲片段", "通过即时提问确认学生理解"];
+}
+
+function splitEvidenceTypes(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item).trim()).filter(Boolean).slice(0, 5);
+  }
+  if (typeof value === "string") {
+    return value
+      .split(/[、,，;；\n]/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .slice(0, 5);
+  }
+  return [];
+}
+
+function defaultProcessEvaluation(input: GenerateLessonPlanPayload): ProcessEvaluationDesign {
+  const topic = input.topic || input.lesson || "本课主题";
+  return {
+    focus: `学生能否围绕“${topic}”说清关键依据和思考过程`,
+    method: "教师观察 + 学生自评 + 同伴互评",
+    peerReviewPrompt: "请同桌用一句话指出对方是否说清依据，并补充一个可改进的地方。",
+    evidenceTypes: ["学生复述", "追问回应", "同伴反馈"]
+  };
+}
+
+function normalizeProcessEvaluation(
+  value: unknown,
+  input: GenerateLessonPlanPayload
+): ProcessEvaluationDesign {
+  const fallback = defaultProcessEvaluation(input);
+  const raw = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const evidenceTypes = splitEvidenceTypes(raw.evidenceTypes ?? raw.evidence_types);
+  return {
+    focus: cleanText(raw.focus, fallback.focus, 120),
+    method: cleanText(raw.method, fallback.method, 80),
+    peerReviewPrompt: cleanText(raw.peerReviewPrompt ?? raw.peer_review_prompt, fallback.peerReviewPrompt, 160),
+    evidenceTypes: evidenceTypes.length ? evidenceTypes : fallback.evidenceTypes
+  };
 }
 
 function hasAny(text: string, patterns: string[]) {
@@ -222,6 +262,7 @@ function concreteStageDetails(input: GenerateLessonPlanPayload): Record<LessonPl
 function defaultStages(input: GenerateLessonPlanPayload): LessonPlanStage[] {
   const minutes = distributeMinutes(input.durationMinutes);
   const details = concreteStageDetails(input);
+  const evaluation = normalizeProcessEvaluation(input.processEvaluation, input);
   return [
     {
       id: "stage-intro",
@@ -232,7 +273,8 @@ function defaultStages(input: GenerateLessonPlanPayload): LessonPlanStage[] {
       teacherAction: details["导入"].teacherAction,
       actionScript: details["导入"].actionScript,
       expectedStudentResponse: "学生能说出已有经验，出现一两个不完整或模糊的判断。",
-      strategyTip: "先收集想法，不急着纠错，把差异留给后续讲解。"
+      strategyTip: "先收集想法，不急着纠错，把差异留给后续讲解。",
+      processEvaluationPoint: `观察学生能否用自己的话说出情境中的关键条件，作为“${evaluation.focus}”的第一条证据。`
     },
     {
       id: "stage-explain",
@@ -243,7 +285,8 @@ function defaultStages(input: GenerateLessonPlanPayload): LessonPlanStage[] {
       teacherAction: details["讲解"].teacherAction,
       actionScript: details["讲解"].actionScript,
       expectedStudentResponse: "多数学生能跟上主线，薄弱学生可能需要具体例子辅助。",
-      strategyTip: "每讲完一个关键点就用一句封闭式小问题确认理解。"
+      strategyTip: "每讲完一个关键点就用一句封闭式小问题确认理解。",
+      processEvaluationPoint: "用一次学生复述检查关键步骤是否真正被理解，并记录复述中的遗漏点。"
     },
     {
       id: "stage-question",
@@ -254,7 +297,8 @@ function defaultStages(input: GenerateLessonPlanPayload): LessonPlanStage[] {
       teacherAction: details["提问"].teacherAction,
       actionScript: details["提问"].actionScript,
       expectedStudentResponse: "学生出现抢答、迟疑、追问或走神回归等真实课堂反应。",
-      strategyTip: "把学生回答转化为全班可判断的问题，避免只和一个学生来回对话。"
+      strategyTip: "把学生回答转化为全班可判断的问题，避免只和一个学生来回对话。",
+      processEvaluationPoint: "把学生追问和同伴补充记录为过程证据，判断是否能说清依据而不是只给答案。"
     },
     {
       id: "stage-practice",
@@ -265,7 +309,8 @@ function defaultStages(input: GenerateLessonPlanPayload): LessonPlanStage[] {
       teacherAction: details["练习"].teacherAction,
       actionScript: details["练习"].actionScript,
       expectedStudentResponse: "学生能尝试应用方法，粗心型可能跳步，挑战型可能提出边界条件。",
-      strategyTip: "要求学生说出依据，不只报答案。"
+      strategyTip: "要求学生说出依据，不只报答案。",
+      processEvaluationPoint: "收集练习中的学生操作和同伴互评，确认是否能迁移到新情境。"
     },
     {
       id: "stage-summary",
@@ -276,7 +321,8 @@ function defaultStages(input: GenerateLessonPlanPayload): LessonPlanStage[] {
       teacherAction: details["总结"].teacherAction,
       actionScript: details["总结"].actionScript,
       expectedStudentResponse: "学生能复述核心方法，仍困惑的学生会暴露最后一个卡点。",
-      strategyTip: "用学生语言收束课堂，再给出下一次练习任务。"
+      strategyTip: "用学生语言收束课堂，再给出下一次练习任务。",
+      processEvaluationPoint: "用出口条或一句自评收集最终证据，形成课后报告的过程性评价依据。"
     }
   ];
 }
@@ -342,6 +388,7 @@ export function buildLocalLessonPlan(input: GenerateLessonPlanPayload, students:
     stages: defaultStages(input),
     incidents: defaultIncidents(input),
     recommendedStudentIds: recommendedStudents.map((student) => student.id),
+    processEvaluation: normalizeProcessEvaluation(input.processEvaluation, input),
     generatedBy: "local",
     planningMode,
     textbookVersion: input.textbookVersion?.trim() || undefined,
@@ -471,7 +518,12 @@ export function normalizeLessonPlanResult(
         source.expectedStudentResponse ?? source.studentExpected ?? source.expected_student_response,
         fallback.expectedStudentResponse
       ),
-      strategyTip: cleanText(source.strategyTip ?? source.strategy_tip, fallback.strategyTip)
+      strategyTip: cleanText(source.strategyTip ?? source.strategy_tip, fallback.strategyTip),
+      processEvaluationPoint: cleanText(
+        source.processEvaluationPoint ?? source.process_evaluation_point,
+        fallback.processEvaluationPoint,
+        180
+      )
     };
   });
 
@@ -514,6 +566,7 @@ export function normalizeLessonPlanResult(
     stages: rebalanceStages(stages, input.durationMinutes),
     incidents: incidents.slice(0, 5),
     recommendedStudentIds: recommendedStudentIds.length ? recommendedStudentIds : local.recommendedStudentIds,
+    processEvaluation: normalizeProcessEvaluation(raw.processEvaluation ?? raw.process_evaluation ?? local.processEvaluation, input),
     generatedBy,
     planningMode: local.planningMode,
     textbookVersion: local.textbookVersion,

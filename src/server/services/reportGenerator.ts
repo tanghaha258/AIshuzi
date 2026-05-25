@@ -4,7 +4,9 @@ import type {
   ClassroomMetrics,
   EvaluationReport,
   EvidenceBoundRecommendation,
+  LessonPlan,
   ModelProviderConfig,
+  ReportProcessEvaluation,
   ReportEvidenceNode,
   ReportTimelineItem,
   StudentAgent,
@@ -20,6 +22,7 @@ interface ReportInput {
   session: TrainingSession;
   events: ClassroomEvent[];
   students: StudentAgent[];
+  lessonPlan?: LessonPlan;
   generatedAt?: string;
 }
 
@@ -312,6 +315,24 @@ function createSummary(session: TrainingSession, metrics: ClassroomMetrics, over
   return `本次“${session.courseTitle}”围绕“${session.topic}”完成微格试讲，记录 ${overview.totalEvents} 条课堂事件，其中学生问题 ${overview.studentQuestions} 次、即时建议 ${overview.systemSuggestions} 条。互动指数 ${metrics.interaction}，困惑度 ${metrics.confusion}，报告已将关键事件绑定为可追溯证据。`;
 }
 
+function createProcessEvaluation(
+  lessonPlan: LessonPlan | undefined,
+  evidence: ReportEvidenceNode[]
+): ReportProcessEvaluation | undefined {
+  if (!lessonPlan?.processEvaluation) return undefined;
+  const design = lessonPlan.processEvaluation;
+  const evidenceEventIds = evidence
+    .filter((node) => ["teacher_utterance", "student_response", "student_question", "system_suggestion"].includes(node.eventType))
+    .slice(0, 6)
+    .map((node) => node.eventId);
+  return {
+    ...design,
+    stagePoints: lessonPlan.stages.map((stage) => `${stage.type}：${stage.processEvaluationPoint}`).filter(Boolean),
+    evidenceEventIds: evidenceEventIds.length ? evidenceEventIds : evidence.slice(0, 3).map((node) => node.eventId),
+    summary: `本次报告按“${design.focus}”追踪过程性评价，采用${design.method}，重点收集${design.evidenceTypes.join("、")}等证据，并保留同伴互评提示：“${design.peerReviewPrompt}”。`
+  };
+}
+
 export function renderReportMarkdown(report: EvaluationReport) {
   const lines = [
     `# ${report.summary.includes(report.sessionId) ? "课后评价报告" : report.summary.split("”")[0].replace(/^本次“/, "") || "课后评价报告"}`,
@@ -333,6 +354,16 @@ export function renderReportMarkdown(report: EvaluationReport) {
     "## 学生画像响应",
     ...report.studentResponses.map((item) => `- ${item.studentName}（${item.profile}）：${item.diagnosis}`),
     "",
+    ...(report.processEvaluation ? [
+      "## 过程性评价",
+      `- 评价重点：${report.processEvaluation.focus}`,
+      `- 评价方式：${report.processEvaluation.method}`,
+      `- 互评提示：${report.processEvaluation.peerReviewPrompt}`,
+      `- 证据类型：${report.processEvaluation.evidenceTypes.join("、")}`,
+      `- 关联证据：${report.processEvaluation.evidenceEventIds.join(", ")}`,
+      ...report.processEvaluation.stagePoints.map((item) => `- ${item}`),
+      ""
+    ] : []),
     "## 改进建议",
     ...report.recommendations.map((item) => `- ${item.title}：${item.action}（证据：${item.evidenceEventIds.join(", ")}）`)
   ];
@@ -346,12 +377,16 @@ export function renderReportHtml(report: EvaluationReport) {
   const recommendations = report.recommendations
     .map((item) => `<li><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.action)}</span><em>证据：${escapeHtml(item.evidenceEventIds.join(", "))}</em></li>`)
     .join("");
+  const processEvaluation = report.processEvaluation
+    ? `<section><h2>过程性评价</h2><p>${escapeHtml(report.processEvaluation.summary)}</p><ul>${report.processEvaluation.stagePoints.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></section>`
+    : "";
   return [
     '<article class="exported-report">',
     `<h1>${escapeHtml(report.summary.split("”")[0].replace(/^本次“/, "") || "课后评价报告")}</h1>`,
     `<p>${escapeHtml(report.summary)}</p>`,
     "<h2>关键时间线</h2>",
     `<ol>${timeline}</ol>`,
+    processEvaluation,
     "<h2>改进建议</h2>",
     `<ol>${recommendations}</ol>`,
     "</article>"
@@ -369,6 +404,7 @@ export function createLocalEvaluationReport({
   session,
   events,
   students,
+  lessonPlan,
   generatedAt = new Date().toISOString()
 }: ReportInput): EvaluationReport {
   const metrics = calculateMetrics(events, students);
@@ -378,6 +414,7 @@ export function createLocalEvaluationReport({
   const studentResponses = createStudentResponses(students, events);
   const teacherStrategyHits = createStrategyHits(events);
   const recommendations = createRecommendations(metrics, evidence, studentResponses);
+  const processEvaluation = createProcessEvaluation(lessonPlan, evidence);
   const strengths = createStrengths(metrics, overview);
   const improvements = createImprovements(metrics, recommendations);
   const keyMoments = keyTimeline.map((item) => `${item.time} ${item.title}：${item.description}`);
@@ -395,6 +432,7 @@ export function createLocalEvaluationReport({
     studentResponses,
     teacherStrategyHits,
     recommendations,
+    processEvaluation,
     exportMarkdown: "",
     exportHtml: "",
     generatedBy: "local",
@@ -436,9 +474,10 @@ export async function generateEvaluationReport({
   session,
   events,
   students,
+  lessonPlan,
   generatedAt = new Date().toISOString()
 }: GenerateReportInput): Promise<{ report: EvaluationReport; usedModel: boolean; fallbackReason: string }> {
-  const localReport = createLocalEvaluationReport({ session, events, students, generatedAt });
+  const localReport = createLocalEvaluationReport({ session, events, students, lessonPlan, generatedAt });
   const validation = validateProviderConfig(provider);
   if (!validation.ok) {
     return { report: { ...localReport, fallbackReason: validation.message }, usedModel: false, fallbackReason: validation.message };

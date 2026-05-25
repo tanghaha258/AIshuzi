@@ -19,9 +19,30 @@ interface GeneratedPlanState {
   fallbackReason: string;
 }
 
-const initialDraft: GenerateLessonPlanPayload = {
+const emptyDraft: GenerateLessonPlanPayload = {
   planningMode: "free-topic",
   title: "",
+  subject: "",
+  grade: "",
+  textbookVersion: "",
+  volume: "",
+  unit: "",
+  lesson: "",
+  period: "",
+  topic: "",
+  objectives: "",
+  durationMinutes: 10,
+  processEvaluation: {
+    focus: "",
+    method: "",
+    peerReviewPrompt: "",
+    evidenceTypes: []
+  }
+};
+
+const exampleDraft: GenerateLessonPlanPayload = {
+  planningMode: "textbook",
+  title: "勾股定理微格试讲脚本",
   subject: "数学",
   grade: "八年级",
   textbookVersion: "人教版",
@@ -31,7 +52,13 @@ const initialDraft: GenerateLessonPlanPayload = {
   period: "第1课时",
   topic: "勾股定理的生活化理解",
   objectives: "学生能够用生活例子解释直角三角形三边关系，并完成一次即时判断。",
-  durationMinutes: 10
+  durationMinutes: 10,
+  processEvaluation: {
+    focus: "学生能否说出直角三角形三边关系的依据",
+    method: "教师观察 + 学生自评 + 同伴互评",
+    peerReviewPrompt: "请同桌判断对方是否指出了直角边和斜边，并补充一个理由。",
+    evidenceTypes: ["学生复述", "追问回应", "同伴反馈"]
+  }
 };
 
 const setupCoursePageSize = 8;
@@ -43,7 +70,7 @@ export function CoursePlannerPage({
   onDeleteCourse,
   onCreateSession
 }: CoursePlannerPageProps) {
-  const [draft, setDraft] = useState<GenerateLessonPlanPayload>(initialDraft);
+  const [draft, setDraft] = useState<GenerateLessonPlanPayload>(emptyDraft);
   const [selectedCourseId, setSelectedCourseId] = useState(courses[0]?.id ?? "");
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>(students.slice(0, 6).map((student) => student.id));
   const [generated, setGenerated] = useState<GeneratedPlanState | null>(null);
@@ -87,6 +114,32 @@ export function CoursePlannerPage({
     (safeSetupCoursePage - 1) * setupCoursePageSize,
     safeSetupCoursePage * setupCoursePageSize
   );
+  const processEvaluation = draft.processEvaluation ?? emptyDraft.processEvaluation!;
+  const evidenceTypesText = processEvaluation.evidenceTypes.join("、");
+  const canGenerate = Boolean(draft.subject.trim() && draft.grade.trim() && draft.topic.trim());
+
+  function updateProcessEvaluation(field: "focus" | "method" | "peerReviewPrompt", value: string) {
+    setDraft((current) => ({
+      ...current,
+      processEvaluation: {
+        ...(current.processEvaluation ?? emptyDraft.processEvaluation!),
+        [field]: value
+      }
+    }));
+  }
+
+  function updateEvidenceTypes(value: string) {
+    setDraft((current) => ({
+      ...current,
+      processEvaluation: {
+        ...(current.processEvaluation ?? emptyDraft.processEvaluation!),
+        evidenceTypes: value
+          .split(/[、,，;；\n]/)
+          .map((item) => item.trim())
+          .filter(Boolean)
+      }
+    }));
+  }
 
   async function saveCourse() {
     if (!draft.title?.trim() || !draft.topic.trim()) return;
@@ -112,7 +165,7 @@ export function CoursePlannerPage({
   }
 
   async function generatePlan() {
-    if (!draft.subject.trim() || !draft.grade.trim() || !draft.topic.trim()) return;
+    if (!canGenerate) return;
     setGenerating(true);
     setError("");
     try {
@@ -123,7 +176,13 @@ export function CoursePlannerPage({
         topic: draft.topic.trim(),
         title: draft.title?.trim(),
         objectives: draft.objectives.trim(),
-        durationMinutes: Number(draft.durationMinutes || 10)
+        durationMinutes: Number(draft.durationMinutes || 10),
+        processEvaluation: {
+          focus: draft.processEvaluation?.focus.trim() ?? "",
+          method: draft.processEvaluation?.method.trim() ?? "",
+          peerReviewPrompt: draft.processEvaluation?.peerReviewPrompt.trim() ?? "",
+          evidenceTypes: draft.processEvaluation?.evidenceTypes ?? []
+        }
       });
       setGenerated({
         course: result.course,
@@ -179,6 +238,10 @@ export function CoursePlannerPage({
             </div>
             <CalendarPlus size={26} />
           </div>
+          <button className="ghost-button planner-example-button" type="button" onClick={() => setDraft(exampleDraft)}>
+            <Sparkles size={16} />
+            填入示例
+          </button>
           <div className="planner-mode-switch" role="group" aria-label="备课模式">
             <button
               className={draft.planningMode === "textbook" ? "planner-mode-switch__item planner-mode-switch__item--active" : "planner-mode-switch__item"}
@@ -198,44 +261,45 @@ export function CoursePlannerPage({
           <div className="form-grid">
             <label>
               课程标题
-              <input value={draft.title ?? ""} onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
+              <input placeholder="例如：勾股定理微格试讲脚本" value={draft.title ?? ""} onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
             </label>
             <label>
               学科
-              <input value={draft.subject} onChange={(event) => setDraft({ ...draft, subject: event.target.value })} />
+              <input placeholder="例如：数学" value={draft.subject} onChange={(event) => setDraft({ ...draft, subject: event.target.value })} />
             </label>
             <label>
               年级
-              <input value={draft.grade} onChange={(event) => setDraft({ ...draft, grade: event.target.value })} />
+              <input placeholder="例如：八年级" value={draft.grade} onChange={(event) => setDraft({ ...draft, grade: event.target.value })} />
             </label>
             <label>
               试讲主题
-              <input value={draft.topic} onChange={(event) => setDraft({ ...draft, topic: event.target.value })} />
+              <input placeholder="例如：勾股定理的生活化理解" value={draft.topic} onChange={(event) => setDraft({ ...draft, topic: event.target.value })} />
             </label>
             {draft.planningMode === "textbook" ? (
               <>
                 <label>
                   教材版本
-                  <input value={draft.textbookVersion ?? ""} onChange={(event) => setDraft({ ...draft, textbookVersion: event.target.value })} />
+                  <input placeholder="例如：人教版" value={draft.textbookVersion ?? ""} onChange={(event) => setDraft({ ...draft, textbookVersion: event.target.value })} />
                 </label>
                 <label>
                   册次
-                  <input value={draft.volume ?? ""} onChange={(event) => setDraft({ ...draft, volume: event.target.value })} />
+                  <input placeholder="例如：八年级下册" value={draft.volume ?? ""} onChange={(event) => setDraft({ ...draft, volume: event.target.value })} />
                 </label>
                 <label>
                   单元
-                  <input value={draft.unit ?? ""} onChange={(event) => setDraft({ ...draft, unit: event.target.value })} />
+                  <input placeholder="例如：第十八章" value={draft.unit ?? ""} onChange={(event) => setDraft({ ...draft, unit: event.target.value })} />
                 </label>
                 <label>
                   课题
                   <input
+                    placeholder="例如：勾股定理"
                     value={draft.lesson ?? ""}
                     onChange={(event) => setDraft({ ...draft, lesson: event.target.value, topic: event.target.value || draft.topic })}
                   />
                 </label>
                 <label>
                   课时
-                  <input value={draft.period ?? ""} onChange={(event) => setDraft({ ...draft, period: event.target.value })} />
+                  <input placeholder="例如：第1课时" value={draft.period ?? ""} onChange={(event) => setDraft({ ...draft, period: event.target.value })} />
                 </label>
               </>
             ) : null}
@@ -251,11 +315,49 @@ export function CoursePlannerPage({
             </label>
             <label className="form-grid__wide">
               教学目标
-              <textarea value={draft.objectives} onChange={(event) => setDraft({ ...draft, objectives: event.target.value })} />
+              <textarea
+                placeholder="例如：学生能够用生活例子解释直角三角形三边关系，并完成一次即时判断。"
+                value={draft.objectives}
+                onChange={(event) => setDraft({ ...draft, objectives: event.target.value })}
+              />
+            </label>
+          </div>
+          <div className="process-evaluation-fields">
+            <label>
+              过程性评价重点
+              <input
+                placeholder="例如：学生能否说出直角边、斜边和平方和关系的依据"
+                value={processEvaluation.focus}
+                onChange={(event) => updateProcessEvaluation("focus", event.target.value)}
+              />
+            </label>
+            <label>
+              评价方式
+              <input
+                placeholder="例如：教师观察 + 学生自评 + 同伴互评"
+                value={processEvaluation.method}
+                onChange={(event) => updateProcessEvaluation("method", event.target.value)}
+              />
+            </label>
+            <label className="process-evaluation-fields__wide">
+              自评/互评提示语
+              <textarea
+                placeholder="例如：请同桌判断对方是否指出了直角边和斜边，并补充一个理由。"
+                value={processEvaluation.peerReviewPrompt}
+                onChange={(event) => updateProcessEvaluation("peerReviewPrompt", event.target.value)}
+              />
+            </label>
+            <label className="process-evaluation-fields__wide">
+              证据类型
+              <input
+                placeholder="例如：学生复述、追问回应、同伴反馈"
+                value={evidenceTypesText}
+                onChange={(event) => updateEvidenceTypes(event.target.value)}
+              />
             </label>
           </div>
           <div className="planner-actions">
-            <button className="primary-button" type="button" onClick={generatePlan} disabled={generating || !draft.topic.trim()}>
+            <button className="primary-button" type="button" onClick={generatePlan} disabled={generating || !canGenerate}>
               {generating ? <Loader2 className="spin" size={17} /> : <Sparkles size={17} />}
               AI生成备课脚本
             </button>
