@@ -164,6 +164,34 @@ assert.equal(
 assert.ok(normalized.incidents.every((incident) => incident.trigger && incident.teacherStrategy));
 assert.deepEqual(normalized.recommendedStudentIds, ["low-attention", "challenger"]);
 
+const genericAligned = normalizeLessonPlanResult(
+  {
+    title: "二元一次方程生活化微格试讲脚本",
+    overview: "围绕二元一次方程的生活应用，用购物总价情境帮助学生理解两个未知量与方程关系。",
+    stages: [
+      {
+        type: "导入",
+        teachingMethod: "情境导入法",
+        teacherAction: "提出买水果总价问题，引导学生设苹果和香蕉的数量。",
+        actionScript: "老师出示：苹果每斤 5 元、香蕉每斤 3 元，小组一共花 42 元。请学生先说可以设哪些未知量，再板书 5x + 3y = 42。"
+      }
+    ],
+    incidents: [],
+    recommendedStudentIds: []
+  },
+  {
+    subject: "数学",
+    grade: "八年级",
+    topic: "二元一次方程生活化理解",
+    objectives: "学生能从生活问题中抽象出二元一次方程，并解释方程中每一项的意义。",
+    durationMinutes: 10
+  },
+  students,
+  "model"
+);
+assert.equal(genericAligned.generatedBy, "model");
+assert.match(genericAligned.stages[0].actionScript, /二元一次方程|5x \+ 3y|42/);
+
 const offTopicNormalized = normalizeLessonPlanResult(
   {
     title: "乘法分配律的初步认识",

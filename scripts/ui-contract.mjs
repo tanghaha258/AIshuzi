@@ -190,6 +190,14 @@ const layoutAssertions = [
     ok: /\.incident-grid\s*{[^}]*auto-fit/s.test(css)
   },
   {
+    name: "generated planner gives the script panel room after a compact fixed form column",
+    ok: /\.generated-planner-grid\s*{[^}]*grid-template-columns:\s*minmax\(300px,\s*360px\)\s+minmax\(0,\s*1fr\)/s.test(css)
+  },
+  {
+    name: "lesson script table scrolls inside the panel instead of clipping the page",
+    ok: /\.lesson-plan-panel\s*{[^}]*overflow:\s*hidden/s.test(css) && /\.lesson-stage-table\s*{[^}]*overflow-x:\s*auto/s.test(css)
+  },
+  {
     name: "dashboard grid does not stretch side panels to match long lists",
     ok: /\.dashboard-grid\s*{[^}]*align-items:\s*start/s.test(css)
   },

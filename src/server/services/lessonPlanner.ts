@@ -383,8 +383,46 @@ function stringifyForAlignment(value: unknown): string {
   return "";
 }
 
+const alignmentStopWords = [
+  "生活化",
+  "理解",
+  "应用",
+  "初步",
+  "认识",
+  "讲解",
+  "微格",
+  "试讲",
+  "脚本",
+  "教学",
+  "学习",
+  "掌握"
+];
+
+function normalizedAlignmentText(value: string) {
+  return value.replace(/\s+/g, "");
+}
+
+function topicKeywords(input: GenerateLessonPlanPayload) {
+  const source = [input.topic, input.lesson, input.title]
+    .map((item) => item?.trim())
+    .filter(Boolean)
+    .join(" ");
+  const pieces = source
+    .split(/[的\s，。！？!?、；;：:（）()《》]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  const keywords = pieces.flatMap((piece) => {
+    const cleaned = alignmentStopWords.reduce((current, word) => current.replaceAll(word, ""), piece).trim();
+    const conceptMatches = piece.match(/[一二三四五六七八九十]+元[一二三四五六七八九十]+次方程|[一二三四五六七八九十]+元方程|[一二三四五六七八九十]+次方程|勾股定理|乘法分配律|一次函数|二次函数/g) ?? [];
+    return [piece, cleaned, ...conceptMatches];
+  });
+
+  return unique(keywords.map(normalizedAlignmentText).filter((keyword) => keyword.length >= 2 && !alignmentStopWords.includes(keyword)));
+}
+
 function isPlanAlignedWithTopic(raw: Record<string, unknown>, input: GenerateLessonPlanPayload) {
-  const text = stringifyForAlignment(raw);
+  const text = normalizedAlignmentText(stringifyForAlignment(raw));
   const kind = topicKind(input);
   if (kind === "quadratic") {
     return /一元二次|二次方程|方程|x²|x\^2|未知量|设为\s*x|设宽/.test(text);
@@ -396,10 +434,7 @@ function isPlanAlignedWithTopic(raw: Record<string, unknown>, input: GenerateLes
     return /说明文|限定词|准确性|删去|表达效果/.test(text);
   }
 
-  const keywords = input.topic
-    .split(/[的\s，。！？!?、；;：:（）()《》]+/)
-    .map((item) => item.trim())
-    .filter((item) => item.length >= 2 && !["生活化", "理解", "应用", "初步", "认识"].includes(item));
+  const keywords = topicKeywords(input);
   return keywords.length === 0 || keywords.some((keyword) => text.includes(keyword));
 }
 

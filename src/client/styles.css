@@ -367,13 +367,15 @@ meter::-webkit-meter-optimum-value {
 
 .generated-planner-grid {
   display: grid;
-  grid-template-columns: minmax(360px, 0.78fr) minmax(0, 1.22fr);
+  grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
   gap: 16px;
   align-items: start;
 }
 
 .planner-form-column {
   min-width: 0;
+  position: sticky;
+  top: 14px;
 }
 
 .planner-mode-switch {
@@ -408,6 +410,7 @@ meter::-webkit-meter-optimum-value {
   display: grid;
   gap: 14px;
   min-width: 0;
+  overflow: hidden;
   padding: 18px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -502,14 +505,16 @@ meter::-webkit-meter-optimum-value {
 }
 
 .lesson-stage-table {
-  overflow: auto;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
   border: 1px solid var(--line);
   border-radius: var(--radius);
 }
 
 .lesson-stage-table table {
   width: 100%;
-  min-width: 1240px;
+  min-width: 1180px;
   border-collapse: collapse;
   table-layout: fixed;
 }
