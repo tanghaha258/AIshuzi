@@ -10,8 +10,10 @@ import type {
   LessonPlanStage,
   ModelCallLog,
   ModelProviderConfig,
+  ReportEvidenceContext,
   StudentAgent,
   StudentRuntimeState,
+  TrainingTarget,
   TrainingSession
 } from "../shared/types.js";
 import { createDeepSeekDefaultProvider, isLegacyOpenAiDefaultProvider } from "../shared/providerDefaults.js";
@@ -186,6 +188,22 @@ function rowToRuntimeState(row: Record<string, unknown>): StudentRuntimeState {
     memory: json<string[]>(String(row.memory ?? "[]"), []),
     lastSpokeAt: row.last_spoke_at ? String(row.last_spoke_at) : undefined,
     updatedAt: String(row.updated_at)
+  };
+}
+
+function rowToTrainingTarget(row: Record<string, unknown>): TrainingTarget {
+  return {
+    id: String(row.id),
+    reportId: String(row.report_id),
+    sessionId: String(row.session_id),
+    sourceSessionId: String(row.source_session_id),
+    courseId: String(row.course_id),
+    recommendationTitle: String(row.recommendation_title),
+    recommendationDetail: String(row.recommendation_detail),
+    action: String(row.action),
+    evidenceEventIds: json<string[]>(String(row.evidence_event_ids ?? "[]"), []),
+    status: row.status === "completed" ? "completed" : "active",
+    createdAt: String(row.created_at)
   };
 }
 
@@ -487,6 +505,7 @@ export const store = {
     return session;
   },
   deleteSession(id: string): boolean {
+    db.prepare("DELETE FROM training_targets WHERE session_id = ? OR source_session_id = ?").run(id, id);
     db.prepare("DELETE FROM student_runtime_states WHERE session_id = ?").run(id);
     db.prepare("DELETE FROM events WHERE session_id = ?").run(id);
     db.prepare("DELETE FROM reports WHERE session_id = ?").run(id);
@@ -496,6 +515,9 @@ export const store = {
   updateSessionStatus(id: string, status: TrainingSession["status"]): TrainingSession | undefined {
     const timestampField = status === "active" ? "started_at" : status === "completed" ? "ended_at" : "created_at";
     db.prepare(`UPDATE sessions SET status = ?, ${timestampField} = COALESCE(${timestampField}, ?) WHERE id = ?`).run(status, now(), id);
+    if (status === "completed") {
+      db.prepare("UPDATE training_targets SET status = 'completed' WHERE session_id = ?").run(id);
+    }
     return this.getSession(id);
   },
   addEvent(event: Omit<ClassroomEvent, "id" | "timestamp"> & { id?: string; timestamp?: string }): ClassroomEvent {
@@ -571,10 +593,99 @@ export const store = {
   listReports(): EvaluationReport[] {
     return (db.prepare("SELECT * FROM reports ORDER BY generated_at DESC").all() as Record<string, unknown>[]).map(rowToReport);
   },
+  getReportById(id: string): EvaluationReport | undefined {
+    const row = db.prepare("SELECT * FROM reports WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+    return row ? rowToReport(row) : undefined;
+  },
+  getReportEvidenceContext(reportId: string, evidenceId: string, radius = 2): ReportEvidenceContext | undefined {
+    const report = this.getReportById(reportId);
+    if (!report) return undefined;
+    const evidence = report.evidence.find((node) => node.id === evidenceId || node.eventId === evidenceId);
+    if (!evidence) return undefined;
+
+    const events = this
+      .listEvents(report.sessionId)
+      .filter((event) => event.type !== "report_evidence");
+    const targetIndex = events.findIndex((event) => event.id === evidence.eventId);
+    if (targetIndex < 0) return undefined;
+
+    const safeRadius = Number.isFinite(radius) ? Math.max(0, Math.min(8, Math.round(radius))) : 2;
+    const before = events.slice(Math.max(0, targetIndex - safeRadius), targetIndex);
+    const target = events[targetIndex];
+    const after = events.slice(targetIndex + 1, targetIndex + 1 + safeRadius);
+
+    return {
+      reportId: report.id,
+      sessionId: report.sessionId,
+      evidence,
+      target,
+      before,
+      after,
+      events: [...before, target, ...after]
+    };
+  },
+  getTrainingTargetBySession(sessionId: string): TrainingTarget | undefined {
+    const row = db.prepare("SELECT * FROM training_targets WHERE session_id = ?").get(sessionId) as Record<string, unknown> | undefined;
+    return row ? rowToTrainingTarget(row) : undefined;
+  },
+  createTrainingTargetFromRecommendation(reportId: string, recommendationTitle: string): { session: TrainingSession; target: TrainingTarget } | undefined {
+    const report = this.getReportById(reportId);
+    if (!report) return undefined;
+    const recommendation = report.recommendations.find((item) => item.title === recommendationTitle) ?? report.recommendations[0];
+    if (!recommendation) return undefined;
+    const sourceSession = this.getSession(report.sessionId);
+    if (!sourceSession) return undefined;
+    const course = this.listCourses().find((item) => item.id === sourceSession.courseId) ?? {
+      id: sourceSession.courseId,
+      title: sourceSession.courseTitle,
+      subject: "历史实训",
+      grade: "未设置",
+      objectives: report.summary,
+      topic: sourceSession.topic,
+      durationMinutes: Math.max(8, report.overview.durationMinutes || 10),
+      createdAt: sourceSession.createdAt
+    };
+
+    const session = this.createSession(course, sourceSession.selectedStudentIds);
+    const target: TrainingTarget = {
+      id: randomUUID(),
+      reportId: report.id,
+      sessionId: session.id,
+      sourceSessionId: sourceSession.id,
+      courseId: course.id,
+      recommendationTitle: recommendation.title,
+      recommendationDetail: recommendation.detail,
+      action: recommendation.action,
+      evidenceEventIds: recommendation.evidenceEventIds,
+      status: "active",
+      createdAt: now()
+    };
+    db.prepare(`
+      INSERT INTO training_targets (
+        id, report_id, session_id, source_session_id, course_id,
+        recommendation_title, recommendation_detail, action, evidence_event_ids,
+        status, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      target.id,
+      target.reportId,
+      target.sessionId,
+      target.sourceSessionId,
+      target.courseId,
+      target.recommendationTitle,
+      target.recommendationDetail,
+      target.action,
+      JSON.stringify(target.evidenceEventIds),
+      target.status,
+      target.createdAt
+    );
+    return { session, target };
+  },
   deleteReport(id: string): boolean {
     const row = db.prepare("SELECT * FROM reports WHERE id = ?").get(id) as Record<string, unknown> | undefined;
     if (!row) return false;
     const sessionId = String(row.session_id);
+    db.prepare("DELETE FROM training_targets WHERE report_id = ?").run(id);
     db.prepare("DELETE FROM events WHERE session_id = ? AND type = 'report_evidence'").run(sessionId);
     const result = db.prepare("DELETE FROM reports WHERE id = ?").run(id);
     return result.changes > 0;

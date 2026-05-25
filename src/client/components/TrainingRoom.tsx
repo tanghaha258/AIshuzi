@@ -31,6 +31,7 @@ import type {
   EvaluationReport,
   StudentAgent,
   StudentRuntimeState,
+  TrainingTarget,
   TrainingSession
 } from "../../shared/types";
 import { StudentPortrait } from "./training/StudentPortrait";
@@ -41,7 +42,9 @@ interface TrainingRoomProps {
   students: StudentAgent[];
   initialEvents: ClassroomEvent[];
   initialRuntimeStates: StudentRuntimeState[];
+  trainingTarget?: TrainingTarget;
   onSessionChange: (session: TrainingSession) => void;
+  onTrainingTargetChange?: (target: TrainingTarget) => void;
   onReport: (report: EvaluationReport) => void;
 }
 
@@ -150,7 +153,9 @@ export function TrainingRoom({
   students,
   initialEvents,
   initialRuntimeStates,
+  trainingTarget,
   onSessionChange,
+  onTrainingTargetChange,
   onReport
 }: TrainingRoomProps) {
   const [events, setEvents] = useState<ClassroomEvent[]>(initialEvents);
@@ -273,6 +278,7 @@ export function TrainingRoom({
     [events]
   );
   const latestSuggestion = [...events].reverse().find((event) => event.type === "system_suggestion")?.content
+    ?? (trainingTarget ? `本次复训目标：${trainingTarget.action}` : undefined)
     ?? "开始试讲后，系统会根据教师发言和 AI 学生反应生成即时策略建议。";
 
   const studentSnapshots = useMemo(() => {
@@ -378,6 +384,9 @@ export function TrainingRoom({
   async function completeSession() {
     const result = await api.completeSession(session.id);
     onSessionChange(result.session);
+    if (result.trainingTarget) {
+      onTrainingTargetChange?.(result.trainingTarget);
+    }
     onReport(result.report);
   }
 
@@ -388,6 +397,13 @@ export function TrainingRoom({
           <span className="eyebrow">Teacher Session Area</span>
           <h1>{session.courseTitle}</h1>
           <p>{session.topic} · {session.status === "active" ? "实训进行中" : session.status === "completed" ? "已完成" : "待开始"}</p>
+          {trainingTarget ? (
+            <div className="training-target-banner">
+              <span>{trainingTarget.status === "completed" ? "复训已完成" : "复训目标"}</span>
+              <strong>{trainingTarget.recommendationTitle}</strong>
+              <small>{trainingTarget.recommendationDetail}</small>
+            </div>
+          ) : null}
         </div>
         <div className="header-controls">
           <span className="status-pill">
@@ -520,6 +536,12 @@ export function TrainingRoom({
               <div className="screen-card__title">
                 <span>即时教学建议</span>
               </div>
+              {trainingTarget ? (
+                <div className="training-target-focus">
+                  <strong>{trainingTarget.status === "completed" ? "复训结果已归档" : "本次复训"}</strong>
+                  <span>{trainingTarget.action}</span>
+                </div>
+              ) : null}
               <p>{latestSuggestion}</p>
             </div>
 

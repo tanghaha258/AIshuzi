@@ -10,6 +10,17 @@
 
 ---
 
+## Progress Update - 2026-05-24
+
+- P7-0 list and layout governance is complete: dashboard course cards, training session records, planner setup lists, and report lists now support search, pagination, bounded layouts, and delete actions where needed.
+- Report deletion is wired through the client and local API; deleting a report keeps the training session record but removes the report and derived report evidence events.
+- P7 Task 5 is complete: report evidence can be traced back to nearby local classroom events without sending extra classroom data to the model.
+- P7 Task 6 is complete: report recommendations can create a new draft training session with an active复训目标 shown in the training room.
+- P7 Task 6 follow-up is complete: training targets now move to `completed` when the linked复训 session completes, and historical reports can still create复训 sessions after the original course entry is deleted.
+- Next phase: continue from the new training target into stronger复训模板 and higher-level report-to-practice analytics.
+
+---
+
 ## Current P7-0 Scope: List And Layout Governance
 
 ### Task 1: Workbench Course List Controls
@@ -69,11 +80,13 @@
 - Modify: `src/server/db.ts`
 - Modify: `src/server/index.ts`
 - Modify: `src/client/components/ReportsPage.tsx`
-- Test: add report evidence context assertions to `scripts/report-generator-contract.ts` or a new API contract.
+- Modify: `src/client/api.ts`
+- Modify: `src/shared/types.ts`
+- Test: `scripts/report-evidence-context-contract.ts`
 
-- [ ] Add an API response shape that returns source classroom events for report evidence IDs.
-- [ ] In the report page, let evidence nodes expand to show nearby teacher/student/system events.
-- [ ] Keep evidence drilldown read-only and local; do not send extra classroom data to the model.
+- [x] Add an API response shape that returns source classroom events for report evidence IDs.
+- [x] In the report page, let evidence nodes expand to show nearby teacher/student/system events.
+- [x] Keep evidence drilldown read-only and local; do not send extra classroom data to the model.
 
 ### Task 6: Recommendation To Training Target
 
@@ -82,19 +95,28 @@
 - Modify: `src/server/db/migrations.ts`
 - Modify: `src/server/db.ts`
 - Modify: `src/server/index.ts`
+- Modify: `src/client/App.tsx`
+- Modify: `src/client/api.ts`
 - Modify: `src/client/components/ReportsPage.tsx`
 - Modify: `src/client/components/TrainingRoom.tsx`
+- Test: `scripts/training-target-contract.ts`
 
-- [ ] Add a lightweight training target object linked to `reportId`, `recommendationTitle`, and evidence IDs.
-- [ ] Add a report action that creates a new session with the recommendation as the next training goal.
-- [ ] Show the active training target in the training room header and immediate teaching suggestion area.
+- [x] Add a lightweight training target object linked to `reportId`, `recommendationTitle`, and evidence IDs.
+- [x] Add a report action that creates a new session with the recommendation as the next training goal.
+- [x] Show the active training target in the training room header and immediate teaching suggestion area.
+- [x] Mark the active training target completed when the linked复训 session completes.
+- [x] Allow historical reports to create复训 sessions even after the original course entry has been deleted.
 
 ## Verification
 
 - [x] `npm run test:ui`
+- [x] `npm run test:report-evidence-context`
+- [x] `npm run test:training-target`
 - [x] `npm run typecheck`
 - [x] `npm run build`
 - [x] `npm run check`
 - [x] Browser screenshot: dashboard at 1366px
 - [x] Browser screenshot: planner at 1366px
 - [x] Browser screenshot: reports at 1366px
+- [x] Browser/CDP check: report evidence drilldown at 1366px (`output/playwright/report-evidence-context.png`)
+- [x] Browser/CDP check: report recommendation to training target flow at 1366px (`output/playwright/training-target-flow.png`)

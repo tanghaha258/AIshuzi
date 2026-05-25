@@ -8,9 +8,11 @@ import type {
   LessonPlan,
   ModelCallLog,
   ModelProviderConfig,
+  ReportEvidenceContext,
   StudentAgent,
   StudentRuntimeState,
   TeacherObservationPayload,
+  TrainingTarget,
   TranscriptTurnPayload,
   TrainingSession
 } from "../shared/types";
@@ -57,8 +59,15 @@ export const api = {
     request<{ ok: boolean }>(`/api/sessions/${sessionId}`, { method: "DELETE" }),
   deleteReport: (reportId: string) =>
     request<{ ok: boolean }>(`/api/reports/${reportId}`, { method: "DELETE" }),
+  getReportEvidenceContext: (reportId: string, evidenceId: string, radius = 2) =>
+    request<ReportEvidenceContext>(`/api/reports/${reportId}/evidence/${encodeURIComponent(evidenceId)}/context?radius=${radius}`),
+  createTrainingTarget: (reportId: string, recommendationTitle: string) =>
+    request<{ session: TrainingSession; target: TrainingTarget }>(`/api/reports/${reportId}/training-targets`, {
+      method: "POST",
+      body: JSON.stringify({ recommendationTitle })
+    }),
   getSession: (sessionId: string) =>
-    request<{ session: TrainingSession; events: ClassroomEvent[]; runtimeStates: StudentRuntimeState[]; report?: EvaluationReport }>(`/api/sessions/${sessionId}`),
+    request<{ session: TrainingSession; events: ClassroomEvent[]; runtimeStates: StudentRuntimeState[]; report?: EvaluationReport; trainingTarget?: TrainingTarget }>(`/api/sessions/${sessionId}`),
   startSession: (sessionId: string) =>
     request<TrainingSession>(`/api/sessions/${sessionId}/start`, { method: "POST" }),
   sendTurn: (sessionId: string, teacherText: string, inputMode: "manual" | "speech") =>
@@ -106,7 +115,7 @@ export const api = {
       runtimeStates: StudentRuntimeState[];
     }>(`/api/sessions/${sessionId}/tick`, { method: "POST" }),
   completeSession: (sessionId: string) =>
-    request<{ session: TrainingSession; report: EvaluationReport }>(`/api/sessions/${sessionId}/complete`, { method: "POST" }),
+    request<{ session: TrainingSession; report: EvaluationReport; trainingTarget?: TrainingTarget }>(`/api/sessions/${sessionId}/complete`, { method: "POST" }),
   getModelProvider: () => request<ModelProviderConfig>("/api/model-provider"),
   listModelCalls: (limit = 50) => request<ModelCallLog[]>(`/api/model-calls?limit=${limit}`),
   saveModelProvider: (payload: Partial<ModelProviderConfig>) =>

@@ -32,7 +32,9 @@ const requiredTrainingRoomSelectors = [
   ".transcript-actions",
   ".teacher-observation-panel",
   ".teacher-observation-grid",
-  ".teacher-observation-status"
+  ".teacher-observation-status",
+  ".training-target-banner",
+  ".training-target-focus"
 ];
 
 const missing = requiredTrainingRoomSelectors.filter((selector) => {
@@ -71,8 +73,13 @@ const requiredReportSelectors = [
   ".report-overview-strip",
   ".report-evidence-list",
   ".report-evidence-node",
+  ".evidence-drilldown-button",
+  ".report-evidence-context",
+  ".report-context-event",
+  ".report-context-event--target",
   ".report-recommendation-list",
   ".report-recommendation-card",
+  ".training-target-button",
   ".report-timeline-table",
   ".report-student-diagnosis",
   ".report-strategy-list",

@@ -149,6 +149,22 @@ export interface TrainingSession {
   createdAt: string;
 }
 
+export type TrainingTargetStatus = "active" | "completed";
+
+export interface TrainingTarget {
+  id: string;
+  reportId: string;
+  sessionId: string;
+  sourceSessionId: string;
+  courseId: string;
+  recommendationTitle: string;
+  recommendationDetail: string;
+  action: string;
+  evidenceEventIds: string[];
+  status: TrainingTargetStatus;
+  createdAt: string;
+}
+
 export interface ClassroomEvent {
   id: string;
   sessionId: string;
@@ -252,6 +268,16 @@ export interface ReportEvidenceNode {
   quote: string;
   reason: string;
   weight: number;
+}
+
+export interface ReportEvidenceContext {
+  reportId: string;
+  sessionId: string;
+  evidence: ReportEvidenceNode;
+  target: ClassroomEvent;
+  before: ClassroomEvent[];
+  after: ClassroomEvent[];
+  events: ClassroomEvent[];
 }
 
 export interface ReportTimelineItem {

@@ -23,6 +23,7 @@ import type {
   EvaluationReport,
   StudentAgent,
   StudentRuntimeState,
+  TrainingTarget,
   TrainingSession
 } from "../shared/types";
 
@@ -68,6 +69,7 @@ export default function App() {
   const [activeSession, setActiveSession] = useState<TrainingSession | null>(null);
   const [activeEvents, setActiveEvents] = useState<ClassroomEvent[]>([]);
   const [activeRuntimeStates, setActiveRuntimeStates] = useState<StudentRuntimeState[]>([]);
+  const [activeTrainingTarget, setActiveTrainingTarget] = useState<TrainingTarget | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -110,6 +112,7 @@ export default function App() {
     setActiveSession(result.session);
     setActiveEvents(result.events);
     setActiveRuntimeStates(result.runtimeStates);
+    setActiveTrainingTarget(result.trainingTarget ?? null);
     navigate("training");
   }
 
@@ -133,6 +136,7 @@ export default function App() {
       setActiveSession(null);
       setActiveEvents([]);
       setActiveRuntimeStates([]);
+      setActiveTrainingTarget(null);
       if (view === "training") {
         const fallbackSession = next.sessions.find((session) => session.status !== "completed") ?? next.sessions[0];
         if (fallbackSession) {
@@ -165,9 +169,19 @@ export default function App() {
     navigate("reports");
   }
 
+  function handleTrainingTargetChange(target: TrainingTarget) {
+    setActiveTrainingTarget(target);
+  }
+
   async function deleteReport(reportId: string) {
     await api.deleteReport(reportId);
     await refresh();
+  }
+
+  async function createTrainingTarget(reportId: string, recommendationTitle: string) {
+    const result = await api.createTrainingTarget(reportId, recommendationTitle);
+    await refresh();
+    await openSession(result.session.id);
   }
 
   function handleCourseCreated(course: DashboardData["courses"][number]) {
@@ -260,7 +274,9 @@ export default function App() {
             students={selectedStudents}
             initialEvents={activeEvents}
             initialRuntimeStates={activeRuntimeStates}
+            trainingTarget={activeTrainingTarget ?? undefined}
             onSessionChange={handleSessionChange}
+            onTrainingTargetChange={handleTrainingTargetChange}
             onReport={handleReport}
           />
         ) : null}
@@ -270,7 +286,14 @@ export default function App() {
           </main>
         ) : null}
         {view === "students" ? <StudentsPage students={data.students} onSaved={handleStudentSaved} /> : null}
-        {view === "reports" ? <ReportsPage reports={data.reports} sessions={data.sessions} onDeleteReport={deleteReport} /> : null}
+        {view === "reports" ? (
+          <ReportsPage
+            reports={data.reports}
+            sessions={data.sessions}
+            onDeleteReport={deleteReport}
+            onCreateTrainingTarget={createTrainingTarget}
+          />
+        ) : null}
         {view === "settings" ? <SettingsPage data={data} /> : null}
       </div>
     </div>

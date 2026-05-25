@@ -911,6 +911,33 @@ meter::-webkit-meter-optimum-value {
   color: #9fc7d1;
 }
 
+.training-target-banner {
+  display: grid;
+  gap: 4px;
+  max-width: 760px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(75, 216, 200, 0.34);
+  border-radius: 7px;
+  background: rgba(75, 216, 200, 0.1);
+}
+
+.training-target-banner span,
+.training-target-focus strong {
+  color: #62e1d4;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.training-target-banner strong {
+  color: #f6fffe;
+}
+
+.training-target-banner small {
+  color: #b8d8dd;
+  line-height: 1.5;
+}
+
 .training-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(330px, 410px);
@@ -1552,6 +1579,21 @@ meter::-webkit-meter-optimum-value {
   min-height: 132px;
 }
 
+.training-target-focus {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 10px;
+  padding: 9px 10px;
+  border: 1px solid rgba(75, 216, 200, 0.28);
+  border-radius: 7px;
+  background: rgba(75, 216, 200, 0.09);
+}
+
+.training-target-focus span {
+  color: #dcecef;
+  line-height: 1.55;
+}
+
 .teacher-feedback-stack .pulse-panel,
 .teacher-feedback-stack .radar-panel {
   min-height: 176px;
@@ -1898,6 +1940,13 @@ meter::-webkit-meter-optimum-value {
   color: #8f5f0e;
 }
 
+.training-target-button {
+  width: fit-content;
+  min-height: 31px;
+  padding: 0 11px;
+  font-size: 12px;
+}
+
 .report-table-scroll {
   overflow: auto;
   border: 1px solid var(--line);
@@ -1992,6 +2041,63 @@ meter::-webkit-meter-optimum-value {
   color: var(--brand-strong);
   font-size: 12px;
   font-weight: 900;
+}
+
+.evidence-drilldown-button {
+  width: fit-content;
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.report-evidence-context {
+  display: grid;
+  gap: 7px;
+  margin-top: 4px;
+  padding: 8px;
+  border: 1px dashed #b8d6d3;
+  border-radius: 6px;
+  background: #f1f8f7;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.report-evidence-context--error {
+  border-color: #efb6bd;
+  background: #fff5f6;
+  color: #9b2931;
+}
+
+.report-context-event {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: 3px 8px;
+  padding: 7px 8px;
+  border-left: 3px solid #9bc7c3;
+  border-radius: 5px;
+  background: #fff;
+}
+
+.report-context-event--target {
+  border-left-color: var(--accent);
+  background: #fff9e9;
+}
+
+.report-context-event span {
+  color: var(--brand-strong);
+  font-weight: 900;
+}
+
+.report-context-event strong {
+  color: var(--ink);
+}
+
+.report-context-event p {
+  grid-column: 2;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
 }
 
 .report-student-diagnosis,

@@ -300,7 +300,8 @@ app.get("/api/sessions/:id", (req, res) => {
     session,
     events: store.listEvents(session.id),
     runtimeStates: store.ensureRuntimeStates(session.id, students),
-    report: store.getReport(session.id)
+    report: store.getReport(session.id),
+    trainingTarget: store.getTrainingTargetBySession(session.id)
   });
 });
 
@@ -334,6 +335,26 @@ app.delete("/api/reports/:id", (req, res) => {
     return;
   }
   res.json({ ok: true });
+});
+
+app.get("/api/reports/:reportId/evidence/:evidenceId/context", (req, res) => {
+  const radius = Number(req.query.radius ?? 2);
+  const context = store.getReportEvidenceContext(req.params.reportId, req.params.evidenceId, radius);
+  if (!context) {
+    res.status(404).json({ message: "Evidence context not found" });
+    return;
+  }
+  res.json(context);
+});
+
+app.post("/api/reports/:reportId/training-targets", (req, res) => {
+  const recommendationTitle = requireString(req.body?.recommendationTitle);
+  const result = store.createTrainingTargetFromRecommendation(req.params.reportId, recommendationTitle);
+  if (!result) {
+    res.status(404).json({ message: "Training target source not found" });
+    return;
+  }
+  res.status(201).json(result);
 });
 
 app.post("/api/sessions/:id/start", (req, res) => {
@@ -486,7 +507,7 @@ app.post("/api/sessions/:id/complete", async (req, res) => {
   }));
   const report = store.saveReport(generated.report);
   createReportEvidenceEvents(report).forEach((event) => store.addEvent(event));
-  res.json({ session, report });
+  res.json({ session, report, trainingTarget: store.getTrainingTargetBySession(session.id) });
 });
 
 app.get("/api/model-provider", (_req, res) => {

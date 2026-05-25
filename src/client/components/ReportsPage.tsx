@@ -9,20 +9,31 @@ import {
   XAxis,
   YAxis
 } from "recharts";
-import type { EvaluationReport, TrainingSession } from "../../shared/types";
+import { api } from "../api";
+import type { ClassroomEvent, EvaluationReport, ReportEvidenceContext, TrainingSession } from "../../shared/types";
 
 interface ReportsPageProps {
   reports: EvaluationReport[];
   sessions: TrainingSession[];
   onDeleteReport: (reportId: string) => void;
+  onCreateTrainingTarget: (reportId: string, recommendationTitle: string) => Promise<void>;
 }
 
 const reportPageSize = 1;
 
-export function ReportsPage({ reports, sessions, onDeleteReport }: ReportsPageProps) {
+interface EvidenceContextState {
+  expanded: boolean;
+  loading: boolean;
+  error: string;
+  context?: ReportEvidenceContext;
+}
+
+export function ReportsPage({ reports, sessions, onDeleteReport, onCreateTrainingTarget }: ReportsPageProps) {
   const [copiedKey, setCopiedKey] = useState("");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
+  const [evidenceContexts, setEvidenceContexts] = useState<Record<string, EvidenceContextState>>({});
+  const [creatingTargetKey, setCreatingTargetKey] = useState("");
 
   async function copyExport(key: string, content: string) {
     if (!content) return;
@@ -42,6 +53,89 @@ export function ReportsPage({ reports, sessions, onDeleteReport }: ReportsPagePr
     return "低优先级";
   }
 
+  function eventLabel(type: ClassroomEvent["type"]) {
+    const labels: Record<ClassroomEvent["type"], string> = {
+      teacher_utterance: "教师发言",
+      transcript_segment: "语音转写",
+      student_response: "学生回应",
+      student_question: "学生提问",
+      student_distraction: "走神信号",
+      student_state_change: "状态变化",
+      teacher_observation: "教师观察",
+      system_suggestion: "教学建议",
+      classroom_metric: "课堂指标",
+      report_evidence: "报告证据"
+    };
+    return labels[type];
+  }
+
+  function evidenceContextKey(reportId: string, evidenceId: string) {
+    return `${reportId}:${evidenceId}`;
+  }
+
+  async function toggleEvidenceContext(reportId: string, evidenceId: string) {
+    const key = evidenceContextKey(reportId, evidenceId);
+    const current = evidenceContexts[key];
+    if (current?.expanded) {
+      setEvidenceContexts((items) => ({
+        ...items,
+        [key]: { ...items[key], expanded: false }
+      }));
+      return;
+    }
+    if (current?.context) {
+      setEvidenceContexts((items) => ({
+        ...items,
+        [key]: { ...items[key], expanded: true }
+      }));
+      return;
+    }
+
+    setEvidenceContexts((items) => ({
+      ...items,
+      [key]: { expanded: true, loading: true, error: "" }
+    }));
+
+    try {
+      const context = await api.getReportEvidenceContext(reportId, evidenceId, 2);
+      setEvidenceContexts((items) => ({
+        ...items,
+        [key]: { expanded: true, loading: false, error: "", context }
+      }));
+    } catch (error) {
+      setEvidenceContexts((items) => ({
+        ...items,
+        [key]: {
+          expanded: true,
+          loading: false,
+          error: error instanceof Error ? error.message : "证据上下文加载失败"
+        }
+      }));
+    }
+  }
+
+  function renderEvidenceContext(state?: EvidenceContextState) {
+    if (!state?.expanded) return null;
+    if (state.loading) return <div className="report-evidence-context">正在读取本地课堂事件...</div>;
+    if (state.error) return <div className="report-evidence-context report-evidence-context--error">{state.error}</div>;
+    if (!state.context) return null;
+
+    return (
+      <div className="report-evidence-context">
+        {state.context.events.map((event) => (
+          <div
+            className={event.id === state.context?.target.id ? "report-context-event report-context-event--target" : "report-context-event"}
+            key={event.id}
+          >
+            <span>{new Date(event.timestamp).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</span>
+            <strong>{eventLabel(event.type)} · {event.actor}</strong>
+            <p>{event.content}</p>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   function reportSearchText(report: EvaluationReport) {
     const session = sessions.find((item) => item.id === report.sessionId);
     return [
@@ -58,6 +152,16 @@ export function ReportsPage({ reports, sessions, onDeleteReport }: ReportsPagePr
     const session = sessions.find((item) => item.id === report.sessionId);
     const ok = window.confirm(`确定删除“${session?.courseTitle ?? "微格实训"} / ${session?.topic ?? "课堂诊断"}”这份课后报告吗？实训记录会保留。`);
     if (ok) onDeleteReport(report.id);
+  }
+
+  async function createRecommendationTarget(report: EvaluationReport, recommendationTitle: string) {
+    const key = `${report.id}:${recommendationTitle}`;
+    setCreatingTargetKey(key);
+    try {
+      await onCreateTrainingTarget(report.id, recommendationTitle);
+    } finally {
+      setCreatingTargetKey("");
+    }
   }
 
   const filteredReports = reports.filter((report) => reportSearchText(report).includes(query.trim().toLowerCase()));
@@ -171,6 +275,14 @@ export function ReportsPage({ reports, sessions, onDeleteReport }: ReportsPagePr
                         </div>
                         <p>{item.detail}</p>
                         <small>{item.action}</small>
+                        <button
+                          className="ghost-button training-target-button"
+                          type="button"
+                          disabled={creatingTargetKey === `${report.id}:${item.title}`}
+                          onClick={() => createRecommendationTarget(report, item.title)}
+                        >
+                          {creatingTargetKey === `${report.id}:${item.title}` ? "正在生成复训..." : "用此建议复训"}
+                        </button>
                         <em>
                           证据：
                           {item.evidenceEventIds.map((eventId) => evidenceByEventId.get(eventId)?.actor ?? eventId).join("、")}
@@ -234,6 +346,14 @@ export function ReportsPage({ reports, sessions, onDeleteReport }: ReportsPagePr
                       <span>{node.actor}</span>
                       <strong>{node.quote}</strong>
                       <small>{node.reason}</small>
+                      <button
+                        className="ghost-button evidence-drilldown-button"
+                        type="button"
+                        onClick={() => toggleEvidenceContext(report.id, node.id)}
+                      >
+                        {evidenceContexts[evidenceContextKey(report.id, node.id)]?.expanded ? "收起上下文" : "展开上下文"}
+                      </button>
+                      {renderEvidenceContext(evidenceContexts[evidenceContextKey(report.id, node.id)])}
                     </div>
                   ))}
                 </div>
