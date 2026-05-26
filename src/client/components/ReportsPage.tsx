@@ -64,6 +64,7 @@ export function ReportsPage({ reports, sessions, onDeleteReport, onCreateTrainin
       teacher_observation: "教师观察",
       system_suggestion: "教学建议",
       classroom_metric: "课堂指标",
+      process_evaluation: "过程评价",
       report_evidence: "报告证据"
     };
     return labels[type];

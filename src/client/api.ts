@@ -8,6 +8,8 @@ import type {
   LessonPlan,
   ModelCallLog,
   ModelProviderConfig,
+  RecordProcessEvidencePayload,
+  RecordProcessEvidenceResult,
   ReportEvidenceContext,
   StudentAgent,
   StudentRuntimeState,
@@ -106,6 +108,11 @@ export const api = {
       observationEvent: ClassroomEvent;
       suggestionEvent?: ClassroomEvent;
     }>(`/api/sessions/${sessionId}/observations`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+  recordProcessEvidence: (sessionId: string, payload: RecordProcessEvidencePayload) =>
+    request<RecordProcessEvidenceResult>(`/api/sessions/${sessionId}/process-evidence`, {
       method: "POST",
       body: JSON.stringify(payload)
     }),

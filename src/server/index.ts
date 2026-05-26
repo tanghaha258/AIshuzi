@@ -21,11 +21,13 @@ import {
   normalizeTranscriptSegment
 } from "./services/transcriptService.js";
 import { buildTeacherObservationEvents } from "./services/observationService.js";
+import { buildProcessEvaluationEvent } from "./services/processEvaluationService.js";
 import { createReportEvidenceEvents, generateEvaluationReport } from "./services/reportGenerator.js";
 import type {
   CreateCoursePayload,
   CreateSessionPayload,
   GenerateLessonPlanPayload,
+  RecordProcessEvidencePayload,
   TrainingSession,
   TranscriptTurnPayload,
   UpsertModelProviderPayload
@@ -461,6 +463,37 @@ app.post("/api/sessions/:id/observations", (req, res) => {
     });
   } catch (error) {
     res.status(400).json({ message: error instanceof Error ? error.message : "保存教师观察失败。" });
+  }
+});
+
+app.post("/api/sessions/:id/process-evidence", (req, res) => {
+  const currentSession = store.getSession(req.params.id);
+  if (!currentSession) {
+    res.status(404).json({ message: "Session not found" });
+    return;
+  }
+  if (currentSession.status === "completed") {
+    res.status(409).json({ message: "已完成的实训不能继续记录过程评价证据。" });
+    return;
+  }
+
+  const session = currentSession.status === "active"
+    ? currentSession
+    : store.updateSessionStatus(currentSession.id, "active") ?? currentSession;
+  const students = store.listStudents().filter((student) => session.selectedStudentIds.includes(student.id));
+  const lessonPlan = store.getLessonPlan(session.courseId);
+
+  try {
+    const eventDraft = buildProcessEvaluationEvent(
+      session,
+      req.body as Partial<RecordProcessEvidencePayload>,
+      students,
+      lessonPlan
+    );
+    const event = store.addEvent(eventDraft);
+    res.status(201).json({ event });
+  } catch (error) {
+    res.status(400).json({ message: error instanceof Error ? error.message : "保存过程评价证据失败。" });
   }
 });
 

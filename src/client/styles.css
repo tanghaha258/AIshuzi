@@ -1358,6 +1358,93 @@ meter::-webkit-meter-optimum-value {
   flex-wrap: wrap;
 }
 
+.process-evidence-panel {
+  display: grid;
+  gap: 10px;
+  padding: 11px;
+  border: 1px solid #c9dfdd;
+  border-radius: var(--radius);
+  background: #f4faf9;
+}
+
+.process-evidence-panel .screen-card__title {
+  margin-bottom: 0;
+  color: var(--ink);
+}
+
+.process-evidence-type-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(86px, 1fr));
+  gap: 7px;
+}
+
+.process-evidence-type {
+  min-height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--brand-strong);
+  background: #ffffff;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.process-evidence-type--active {
+  color: #ffffff;
+  border-color: var(--brand);
+  background: var(--brand);
+}
+
+.process-evidence-student-select {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.process-evidence-student-select select,
+.process-evidence-note {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 9px 10px;
+  color: var(--ink);
+  background: #ffffff;
+}
+
+.process-evidence-note {
+  min-height: 66px;
+  resize: vertical;
+}
+
+.process-evidence-list {
+  display: grid;
+  gap: 7px;
+  max-height: 152px;
+  overflow: auto;
+}
+
+.process-evidence-card {
+  display: grid;
+  gap: 4px;
+  padding: 9px;
+  border-left: 3px solid var(--brand);
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.process-evidence-card strong {
+  color: var(--brand-strong);
+  font-size: 12px;
+}
+
+.process-evidence-card span,
+.process-evidence-empty {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .teacher-feedback-stack {
   display: grid;
   gap: 12px;

@@ -44,7 +44,8 @@ const importantTypes = new Set<ClassroomEvent["type"]>([
   "student_distraction",
   "student_state_change",
   "teacher_observation",
-  "system_suggestion"
+  "system_suggestion",
+  "process_evaluation"
 ]);
 
 function clip(value: string, length: number) {
@@ -72,6 +73,7 @@ function eventLabel(type: ClassroomEvent["type"]) {
     teacher_observation: "教师观察",
     system_suggestion: "教学建议",
     classroom_metric: "课堂指标",
+    process_evaluation: "过程评价",
     report_evidence: "报告证据"
   };
   return labels[type];
@@ -80,6 +82,7 @@ function eventLabel(type: ClassroomEvent["type"]) {
 function evidenceReason(event: ClassroomEvent) {
   if (event.type === "student_question") return "学生主动暴露理解边界，是诊断课堂真实生成性的关键证据。";
   if (event.type === "student_response") return "学生回应可反映教师提问是否触发了有效参与。";
+  if (event.type === "process_evaluation") return "教师记录的过程性评价证据，可直接用于判断学生复述、自评或同伴互评是否发生。";
   if (event.type === "system_suggestion") return "系统建议记录了课堂即时调控点，可用于复盘教师策略命中。";
   if (event.type === "teacher_observation") return "教师观察指标用于判断讲台表现和镜头交流状态。";
   if (event.type === "student_state_change" || event.type === "student_distraction") return "学生状态变化体现注意力和理解阻滞。";
@@ -88,6 +91,7 @@ function evidenceReason(event: ClassroomEvent) {
 }
 
 function evidenceWeight(event: ClassroomEvent) {
+  if (event.type === "process_evaluation") return 98;
   if (event.type === "student_question" || event.type === "system_suggestion") return 90;
   if (event.type === "teacher_observation" || event.type === "student_state_change") return 76;
   if (event.type === "student_response") return 68;
@@ -321,15 +325,19 @@ function createProcessEvaluation(
 ): ReportProcessEvaluation | undefined {
   if (!lessonPlan?.processEvaluation) return undefined;
   const design = lessonPlan.processEvaluation;
+  const processEvidence = evidence.filter((node) => node.eventType === "process_evaluation");
   const evidenceEventIds = evidence
-    .filter((node) => ["teacher_utterance", "student_response", "student_question", "system_suggestion"].includes(node.eventType))
+    .filter((node) => ["process_evaluation", "teacher_utterance", "student_response", "student_question", "system_suggestion"].includes(node.eventType))
     .slice(0, 6)
     .map((node) => node.eventId);
+  const evidenceSummary = processEvidence.length
+    ? `本次报告已优先引用 ${processEvidence.length} 条教师记录的过程性评价证据`
+    : "本次报告根据课堂互动事件推断过程性评价证据";
   return {
     ...design,
     stagePoints: lessonPlan.stages.map((stage) => `${stage.type}：${stage.processEvaluationPoint}`).filter(Boolean),
     evidenceEventIds: evidenceEventIds.length ? evidenceEventIds : evidence.slice(0, 3).map((node) => node.eventId),
-    summary: `本次报告按“${design.focus}”追踪过程性评价，采用${design.method}，重点收集${design.evidenceTypes.join("、")}等证据，并保留同伴互评提示：“${design.peerReviewPrompt}”。`
+    summary: `${evidenceSummary}。本次报告按“${design.focus}”追踪过程性评价，采用${design.method}，重点收集${design.evidenceTypes.join("、")}等证据，并保留同伴互评提示：“${design.peerReviewPrompt}”。`
   };
 }
 

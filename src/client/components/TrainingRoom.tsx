@@ -29,6 +29,7 @@ import type {
   ClassroomEvent,
   ClassroomMetrics,
   EvaluationReport,
+  ProcessEvidenceType,
   StudentAgent,
   StudentRuntimeState,
   TrainingTarget,
@@ -59,6 +60,14 @@ const defaultMetrics: ClassroomMetrics = {
   questioning: 48,
   engagement: 62
 };
+
+const processEvidenceTypes: ProcessEvidenceType[] = [
+  "学生复述",
+  "追问回应",
+  "学生自评",
+  "同伴互评",
+  "教师观察"
+];
 
 function metricColor(value: number, inverse = false) {
   if (inverse) {
@@ -116,6 +125,8 @@ function eventTypeLabel(type: ClassroomEvent["type"]) {
       return "教师观察";
     case "transcript_segment":
       return "语音转写";
+    case "process_evaluation":
+      return "过程评价";
     case "report_evidence":
       return "报告证据";
     default:
@@ -166,6 +177,11 @@ export function TrainingRoom({
     return lastMetric ? (lastMetric.metadata as unknown as ClassroomMetrics) : defaultMetrics;
   });
   const [submitting, setSubmitting] = useState(false);
+  const [processEvidenceType, setProcessEvidenceType] = useState<ProcessEvidenceType>("学生复述");
+  const [processTargetStudentId, setProcessTargetStudentId] = useState("");
+  const [processEvidenceNote, setProcessEvidenceNote] = useState("");
+  const [processEvidenceSaving, setProcessEvidenceSaving] = useState(false);
+  const [processEvidenceError, setProcessEvidenceError] = useState("");
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [observationError, setObservationError] = useState("");
   const [modelNotice, setModelNotice] = useState("本地模拟已待命");
@@ -305,6 +321,10 @@ export function TrainingRoom({
   const activeCount = studentSnapshots.filter(({ pose }) => pose !== "distracted").length;
   const questionCount = events.filter((event) => event.type === "student_question").length;
   const distractedCount = studentSnapshots.filter(({ pose }) => pose === "distracted").length;
+  const recentProcessEvidence = useMemo(
+    () => events.filter((event) => event.type === "process_evaluation").slice(-4).reverse(),
+    [events]
+  );
 
   const radarData = [
     { metric: "节奏", value: metrics.pace },
@@ -378,6 +398,30 @@ export function TrainingRoom({
       transcript.setLastError(error instanceof Error ? error.message : "发送转写回合失败。");
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function recordProcessEvidence() {
+    const note = processEvidenceNote.trim();
+    if (!note || processEvidenceSaving || session.status === "completed") return;
+    setProcessEvidenceSaving(true);
+    setProcessEvidenceError("");
+    try {
+      if (session.status === "draft") {
+        const updated = await api.startSession(session.id);
+        onSessionChange(updated);
+      }
+      const result = await api.recordProcessEvidence(session.id, {
+        evidenceType: processEvidenceType,
+        targetStudentId: processTargetStudentId || undefined,
+        note
+      });
+      appendEvents([result.event]);
+      setProcessEvidenceNote("");
+    } catch (error) {
+      setProcessEvidenceError(error instanceof Error ? error.message : "保存过程评价证据失败。");
+    } finally {
+      setProcessEvidenceSaving(false);
     }
   }
 
@@ -527,6 +571,61 @@ export function TrainingRoom({
                   {submitting ? <Loader2 className="spin" size={17} /> : <Send size={17} />}
                   用转写发送回合
                 </button>
+              </div>
+            </div>
+
+            <div className="process-evidence-panel">
+              <div className="screen-card__title">
+                <span><CheckCircle2 size={15} /> 过程评价记录</span>
+                <span className="speech-status-pill">课后报告证据</span>
+              </div>
+              <div className="process-evidence-type-grid">
+                {processEvidenceTypes.map((type) => (
+                  <button
+                    className={processEvidenceType === type ? "process-evidence-type process-evidence-type--active" : "process-evidence-type"}
+                    type="button"
+                    key={type}
+                    onClick={() => setProcessEvidenceType(type)}
+                  >
+                    {type}
+                  </button>
+                ))}
+              </div>
+              <label className="process-evidence-student-select">
+                <span>评价对象</span>
+                <select value={processTargetStudentId} onChange={(event) => setProcessTargetStudentId(event.target.value)}>
+                  <option value="">全班</option>
+                  {selectedStudents.map((student) => (
+                    <option value={student.id} key={student.id}>{student.name}</option>
+                  ))}
+                </select>
+              </label>
+              <textarea
+                className="process-evidence-note"
+                value={processEvidenceNote}
+                onChange={(event) => setProcessEvidenceNote(event.target.value)}
+                placeholder="记录一句可追溯证据，例如：小明能复述 x 表示苹果单价，但需要同伴补充总价等量关系。"
+              />
+              {processEvidenceError ? <p className="transcript-error">{processEvidenceError}</p> : null}
+              <div className="transcript-actions">
+                <button
+                  className="primary-button"
+                  type="button"
+                  onClick={recordProcessEvidence}
+                  disabled={processEvidenceSaving || !processEvidenceNote.trim() || session.status === "completed"}
+                >
+                  {processEvidenceSaving ? <Loader2 className="spin" size={17} /> : <CheckCircle2 size={17} />}
+                  记录评价证据
+                </button>
+              </div>
+              <div className="process-evidence-list">
+                {recentProcessEvidence.map((event) => (
+                  <div className="process-evidence-card" key={event.id}>
+                    <strong>{String(event.metadata.evidenceType ?? "过程评价")} / {String(event.metadata.targetStudentName ?? "全班")}</strong>
+                    <span>{event.content}</span>
+                  </div>
+                ))}
+                {!recentProcessEvidence.length ? <span className="process-evidence-empty">暂无过程评价证据，记录后会进入课堂时间线和课后报告。</span> : null}
               </div>
             </div>
           </div>

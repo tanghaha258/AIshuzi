@@ -97,6 +97,21 @@ const events: ClassroomEvent[] = [
     metadata: { observation: { faceVisible: true, stability: 80 } }
   },
   {
+    id: "event-process-1",
+    sessionId: session.id,
+    type: "process_evaluation",
+    actor: "过程评价",
+    content: "学生复述 / 阿哲：阿哲能说出 x、y 分别表示苹果和梨的单价，但需要同伴补充总价关系。",
+    timestamp: "2026-05-24T08:04:30.000Z",
+    metadata: {
+      evidenceType: "学生复述",
+      targetStudentId: "student-1",
+      targetStudentName: "阿哲",
+      processFocus: "学生能否说出设元依据和等量关系",
+      source: "teacher-manual"
+    }
+  },
+  {
     id: "event-old-report-evidence",
     sessionId: session.id,
     type: "report_evidence",
@@ -156,15 +171,16 @@ assert.ok(report.overview.studentQuestions >= 2);
 assert.ok(report.evidence.length >= 3);
 assert.ok(report.evidence.every((node) => node.eventId && node.quote.length <= 90));
 assert.ok(report.evidence.every((node) => node.eventType !== "report_evidence"));
+assert.ok(report.evidence.some((node) => node.eventId === "event-process-1" && node.eventType === "process_evaluation"));
 assert.ok(report.keyTimeline.some((item) => item.evidenceEventId === "event-student-1"));
 assert.ok(report.studentResponses.some((item) => item.studentName === "阿哲" && item.confusionSignals >= 1));
 assert.ok(report.teacherStrategyHits.some((item) => item.evidenceEventIds.includes("event-strategy-1")));
 assert.ok(report.recommendations.length >= 2);
 assert.ok(report.recommendations.every((item) => item.evidenceEventIds.length > 0));
 assert.equal(report.processEvaluation?.focus, lessonPlan.processEvaluation?.focus);
-assert.match(report.processEvaluation?.summary ?? "", /过程性评价|同伴互评|学生复述/);
+assert.match(report.processEvaluation?.summary ?? "", /过程性评价|同伴互评|学生复述|教师记录/);
 assert.ok(report.processEvaluation?.stagePoints.some((item) => item.includes("x、y")));
-assert.ok(report.processEvaluation?.evidenceEventIds.length);
+assert.ok(report.processEvaluation?.evidenceEventIds.includes("event-process-1"));
 
 const evidenceEvents = createReportEvidenceEvents(report);
 assert.equal(evidenceEvents.length, report.evidence.length);

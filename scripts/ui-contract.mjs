@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 
 const css = readFileSync("src/client/styles.css", "utf8");
 const plannerSource = readFileSync("src/client/components/CoursePlannerPage.tsx", "utf8");
+const trainingRoomSource = readFileSync("src/client/components/TrainingRoom.tsx", "utf8");
 
 const requiredTrainingRoomSelectors = [
   ".training-grid",
@@ -35,7 +36,13 @@ const requiredTrainingRoomSelectors = [
   ".teacher-observation-grid",
   ".teacher-observation-status",
   ".training-target-banner",
-  ".training-target-focus"
+  ".training-target-focus",
+  ".process-evidence-panel",
+  ".process-evidence-type-grid",
+  ".process-evidence-student-select",
+  ".process-evidence-note",
+  ".process-evidence-list",
+  ".process-evidence-card"
 ];
 
 const missing = requiredTrainingRoomSelectors.filter((selector) => {
@@ -220,6 +227,10 @@ const layoutAssertions = [
   {
     name: "planner list panel avoids vertically stretched selection cards",
     ok: /\.planner-list-panel\s*{[^}]*align-items:\s*start/s.test(css)
+  },
+  {
+    name: "training room records process-evaluation evidence through the API",
+    ok: /api\.recordProcessEvidence/.test(trainingRoomSource)
   }
 ];
 

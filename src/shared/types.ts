@@ -10,6 +10,7 @@ export type EventType =
   | "teacher_observation"
   | "system_suggestion"
   | "classroom_metric"
+  | "process_evaluation"
   | "report_evidence";
 
 export interface ModelProviderConfig {
@@ -82,6 +83,23 @@ export interface ProcessEvaluationDesign {
   method: string;
   peerReviewPrompt: string;
   evidenceTypes: string[];
+}
+
+export type ProcessEvidenceType =
+  | "学生复述"
+  | "追问回应"
+  | "学生自评"
+  | "同伴互评"
+  | "教师观察";
+
+export interface RecordProcessEvidencePayload {
+  evidenceType: ProcessEvidenceType;
+  targetStudentId?: string;
+  note: string;
+}
+
+export interface RecordProcessEvidenceResult {
+  event: ClassroomEvent;
 }
 
 export interface LessonPlanStage {
