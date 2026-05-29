@@ -1124,6 +1124,36 @@ meter::-webkit-meter-optimum-value {
   object-fit: cover;
 }
 
+.camera-device-control {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 10px;
+  color: #9fb7c8;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.camera-device-control select {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 10px;
+  color: #e8f5f6;
+  border: 1px solid #284656;
+  border-radius: 6px;
+  background: #10212c;
+}
+
+.camera-diagnostic {
+  margin: 9px 0 0;
+  padding: 9px 10px;
+  color: #ffd4da;
+  border: 1px solid rgba(201, 76, 84, 0.42);
+  border-radius: 6px;
+  background: rgba(201, 76, 84, 0.12);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .camera-placeholder {
   display: grid;
   place-items: center;
@@ -1165,6 +1195,43 @@ meter::-webkit-meter-optimum-value {
   background: rgba(138, 41, 49, 0.34);
 }
 
+.teacher-observation-calibration {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid #284656;
+  border-radius: 6px;
+  background: #10212c;
+}
+
+.teacher-observation-calibration strong {
+  color: #e8f5f6;
+  font-size: 14px;
+}
+
+.teacher-observation-calibration span {
+  color: #9fb7c8;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.teacher-observation-calibration--good {
+  border-color: rgba(75, 216, 200, 0.48);
+  background: rgba(75, 216, 200, 0.09);
+}
+
+.teacher-observation-calibration--warning {
+  border-color: rgba(229, 169, 61, 0.52);
+  background: rgba(229, 169, 61, 0.1);
+}
+
+.teacher-observation-calibration--idle {
+  border-color: #284656;
+}
+
 .teacher-observation-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1199,6 +1266,35 @@ meter::-webkit-meter-optimum-value {
   border: 1px dashed #284656;
   border-radius: 6px;
   text-align: center;
+}
+
+.teacher-observation-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.teacher-observation-meta span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 7px 6px;
+  border: 1px solid rgba(159, 183, 200, 0.14);
+  border-radius: 6px;
+  background: rgba(8, 25, 34, 0.28);
+}
+
+.teacher-observation-meta strong {
+  overflow: hidden;
+  color: #e8f5f6;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.teacher-observation-meta small {
+  color: #9fb7c8;
+  font-size: 11px;
 }
 
 .teacher-observation-error {

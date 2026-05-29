@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 const css = readFileSync("src/client/styles.css", "utf8");
 const plannerSource = readFileSync("src/client/components/CoursePlannerPage.tsx", "utf8");
 const trainingRoomSource = readFileSync("src/client/components/TrainingRoom.tsx", "utf8");
+const teacherObservationPanelSource = readFileSync("src/client/components/training/TeacherObservationPanel.tsx", "utf8");
 
 const requiredTrainingRoomSelectors = [
   ".training-grid",
@@ -35,6 +36,10 @@ const requiredTrainingRoomSelectors = [
   ".teacher-observation-panel",
   ".teacher-observation-grid",
   ".teacher-observation-status",
+  ".teacher-observation-calibration",
+  ".teacher-observation-meta",
+  ".camera-device-control",
+  ".camera-diagnostic",
   ".training-target-banner",
   ".training-target-focus",
   ".process-evidence-panel",
@@ -231,6 +236,32 @@ const layoutAssertions = [
   {
     name: "training room records process-evaluation evidence through the API",
     ok: /api\.recordProcessEvidence/.test(trainingRoomSource)
+  },
+  {
+    name: "training room exposes camera device selection and diagnostics",
+    ok: /devices\.map/.test(trainingRoomSource)
+      && /selectedDeviceId/.test(trainingRoomSource)
+      && /setSelectedDeviceId/.test(trainingRoomSource)
+      && /cameraFailureMessage/.test(trainingRoomSource)
+      && /camera-device-control/.test(trainingRoomSource)
+      && /camera-diagnostic/.test(trainingRoomSource)
+  },
+  {
+    name: "training room tracks teacher observation save state",
+    ok: /observationSaveState/.test(trainingRoomSource)
+      && /lastObservationSavedAt/.test(trainingRoomSource)
+      && /setObservationSaveState\("saving"\)/.test(trainingRoomSource)
+      && /setObservationSaveState\("saved"\)/.test(trainingRoomSource)
+      && /setObservationSaveState\("error"\)/.test(trainingRoomSource)
+  },
+  {
+    name: "teacher observation panel shows calibration, sampling time, confidence, and save state",
+    ok: /calibrationLabel/.test(teacherObservationPanelSource)
+      && /sampleTimeLabel/.test(teacherObservationPanelSource)
+      && /saveStateLabel/.test(teacherObservationPanelSource)
+      && /faceConfidence/.test(teacherObservationPanelSource)
+      && /teacher-observation-calibration/.test(teacherObservationPanelSource)
+      && /teacher-observation-meta/.test(teacherObservationPanelSource)
   }
 ];
 

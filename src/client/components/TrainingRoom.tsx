@@ -20,7 +20,7 @@ import {
   ResponsiveContainer
 } from "recharts";
 import { api } from "../api";
-import { useCamera } from "../hooks/useCamera";
+import { useCamera, type CameraFailureReason } from "../hooks/useCamera";
 import { useSpeechRecognition } from "../hooks/useSpeechRecognition";
 import { useTeacherVision } from "../hooks/useTeacherVision";
 import { useTranscriptBuffer } from "../hooks/useTranscriptBuffer";
@@ -36,7 +36,7 @@ import type {
   TrainingSession
 } from "../../shared/types";
 import { StudentPortrait } from "./training/StudentPortrait";
-import { TeacherObservationPanel } from "./training/TeacherObservationPanel";
+import { TeacherObservationPanel, type TeacherObservationSaveState } from "./training/TeacherObservationPanel";
 
 interface TrainingRoomProps {
   session: TrainingSession;
@@ -159,6 +159,23 @@ function speechStatusLabel(status: ReturnType<typeof useSpeechRecognition>["stat
   }
 }
 
+function cameraFailureMessage(reason?: CameraFailureReason) {
+  switch (reason) {
+    case "unsupported":
+      return "当前浏览器不支持摄像头调用，请换用支持 MediaDevices 的浏览器。";
+    case "permission-denied":
+      return "摄像头权限未授权，请在浏览器地址栏或系统隐私设置中允许访问。";
+    case "device-busy":
+      return "摄像头可能正被其他软件占用，请关闭会议软件或录屏工具后重试。";
+    case "not-found":
+      return "未检测到可用摄像头，请检查外接摄像头连接后刷新设备列表。";
+    case "unknown":
+      return "摄像头启动失败，请检查设备连接、浏览器权限或重新切换设备。";
+    default:
+      return "";
+  }
+}
+
 export function TrainingRoom({
   session,
   students,
@@ -184,8 +201,18 @@ export function TrainingRoom({
   const [processEvidenceError, setProcessEvidenceError] = useState("");
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [observationError, setObservationError] = useState("");
+  const [observationSaveState, setObservationSaveState] = useState<TeacherObservationSaveState>("idle");
+  const [lastObservationSavedAt, setLastObservationSavedAt] = useState<string | undefined>(undefined);
   const [modelNotice, setModelNotice] = useState("本地模拟已待命");
-  const { videoRef, status: cameraStatus } = useCamera(cameraEnabled);
+  const {
+    videoRef,
+    status: cameraStatus,
+    devices,
+    selectedDeviceId,
+    setSelectedDeviceId,
+    refreshDevices,
+    failureReason
+  } = useCamera(cameraEnabled);
   const vision = useTeacherVision(cameraEnabled && cameraStatus === "active", videoRef);
   const selectedStudents = students.filter((student) => session.selectedStudentIds.includes(student.id));
   const savedTranscriptIdsRef = useRef<Set<string>>(new Set());
@@ -218,6 +245,8 @@ export function TrainingRoom({
   useEffect(() => {
     lastSavedObservationRef.current = undefined;
     setObservationError("");
+    setObservationSaveState("idle");
+    setLastObservationSavedAt(undefined);
   }, [session.id]);
 
   useEffect(() => {
@@ -275,6 +304,7 @@ export function TrainingRoom({
     }
 
     lastSavedObservationRef.current = { signature, capturedAt };
+    setObservationSaveState("saving");
     api.saveTeacherObservation(session.id, observation)
       .then((result) => {
         appendEvents([
@@ -282,12 +312,17 @@ export function TrainingRoom({
           ...(result.suggestionEvent ? [result.suggestionEvent] : [])
         ]);
         setObservationError("");
+        setObservationSaveState("saved");
+        setLastObservationSavedAt(new Date().toISOString());
       })
       .catch((error) => {
         lastSavedObservationRef.current = undefined;
+        setObservationSaveState("error");
         setObservationError(error instanceof Error ? error.message : "保存教师观察失败。");
       });
   }, [appendEvents, session.id, session.status, vision.latest]);
+
+  const cameraDiagnostic = cameraFailureMessage(failureReason);
 
   const timeline = useMemo(
     () => events.filter((event) => event.type !== "classroom_metric").slice(-8).reverse(),
@@ -488,15 +523,34 @@ export function TrainingRoom({
                 {cameraEnabled ? <VideoOff size={18} /> : <Camera size={18} />}
               </button>
             </div>
+            <label className="camera-device-control">
+              <span>摄像头设备</span>
+              <select
+                value={selectedDeviceId}
+                onChange={(event) => setSelectedDeviceId(event.target.value)}
+                onFocus={() => void refreshDevices()}
+                disabled={!devices.length}
+              >
+                <option value="">默认摄像头</option>
+                {devices.map((device, index) => (
+                  <option value={device.deviceId} key={device.deviceId || `camera-${index}`}>
+                    {device.label || `摄像头 ${index + 1}`}
+                  </option>
+                ))}
+              </select>
+            </label>
             {cameraEnabled && cameraStatus === "active" ? (
               <video ref={videoRef} autoPlay playsInline muted />
             ) : (
               <div className="camera-placeholder">
                 <Camera size={44} />
-                <strong>{cameraStatus === "blocked" ? "摄像头权限未开启" : "摄像头预览区"}</strong>
+                <strong>{cameraStatus === "blocked" ? "摄像头不可用" : cameraStatus === "requesting" ? "正在开启摄像头" : "摄像头预览区"}</strong>
                 <span>权限不可用时仍可通过手动输入完成试讲演示。</span>
               </div>
             )}
+            {cameraDiagnostic ? (
+              <p className="camera-diagnostic">{cameraDiagnostic}</p>
+            ) : null}
           </div>
 
           <TeacherObservationPanel
@@ -504,6 +558,8 @@ export function TrainingRoom({
             observation={vision.latest?.payload}
             recording={cameraEnabled && cameraStatus === "active"}
             error={vision.error || observationError}
+            observationSaveState={observationSaveState}
+            lastObservationSavedAt={lastObservationSavedAt}
           />
 
           <div className="screen-card lesson-card">
