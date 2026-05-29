@@ -13,6 +13,7 @@ assert.match(source, /const \[devices, setDevices\]/);
 assert.match(source, /const \[selectedDeviceId, setSelectedDeviceId\]/);
 assert.match(source, /navigator\.mediaDevices\.enumerateDevices\(\)/);
 assert.match(source, /kind === "videoinput"/);
+assert.match(source, /&& Boolean\(device\.deviceId\)/);
 assert.match(source, /deviceId:\s*{\s*exact:\s*selectedDeviceId\s*}/s);
 assert.match(source, /streamRef\.current = mediaStream/);
 assert.match(source, /videoRef\.current\.srcObject = streamRef\.current/);

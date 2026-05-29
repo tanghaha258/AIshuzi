@@ -1162,11 +1162,22 @@ meter::-webkit-meter-optimum-value {
   color: #9eb7c3;
   text-align: center;
   padding: 16px;
+  border: 0;
 }
 
 .camera-placeholder span {
   max-width: 260px;
   font-size: 12px;
+}
+
+.camera-preview-toggle:hover:not(:disabled) {
+  color: #d9f3f4;
+  background: #173240;
+}
+
+.camera-preview-toggle:focus-visible {
+  outline: 2px solid #57dbcf;
+  outline-offset: 2px;
 }
 
 .teacher-observation-panel {

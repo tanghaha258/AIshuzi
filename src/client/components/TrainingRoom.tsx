@@ -369,6 +369,17 @@ export function TrainingRoom({
     { metric: "互动", value: metrics.interaction }
   ];
 
+  function requestCameraPreview() {
+    void refreshDevices();
+    if (!cameraEnabled || cameraStatus !== "blocked") {
+      setCameraEnabled(true);
+      return;
+    }
+
+    setCameraEnabled(false);
+    window.setTimeout(() => setCameraEnabled(true), 0);
+  }
+
   async function startSession() {
     const updated = await api.startSession(session.id);
     onSessionChange(updated);
@@ -542,11 +553,20 @@ export function TrainingRoom({
             {cameraEnabled && cameraStatus === "active" ? (
               <video ref={videoRef} autoPlay playsInline muted />
             ) : (
-              <div className="camera-placeholder">
+              <button
+                className="camera-placeholder camera-preview-toggle"
+                type="button"
+                onClick={requestCameraPreview}
+                disabled={cameraStatus === "requesting"}
+              >
                 <Camera size={44} />
                 <strong>{cameraStatus === "blocked" ? "摄像头不可用" : cameraStatus === "requesting" ? "正在开启摄像头" : "摄像头预览区"}</strong>
-                <span>权限不可用时仍可通过手动输入完成试讲演示。</span>
-              </div>
+                <span>
+                  {cameraStatus === "blocked"
+                    ? "调整浏览器或系统权限后，点击这里重试摄像头。"
+                    : "点击这里开启摄像头预览。"}
+                </span>
+              </button>
             )}
             {cameraDiagnostic ? (
               <p className="camera-diagnostic">{cameraDiagnostic}</p>

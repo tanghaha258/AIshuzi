@@ -55,7 +55,7 @@ export function useCamera(enabled: boolean) {
 
     const mediaDevices = await navigator.mediaDevices.enumerateDevices();
     const videoDevices = mediaDevices
-      .filter(({ kind }) => kind === "videoinput")
+      .filter((device) => device.kind === "videoinput" && Boolean(device.deviceId))
       .map((device, index) => ({
         deviceId: device.deviceId,
         label: device.label || `Camera ${index + 1}`,

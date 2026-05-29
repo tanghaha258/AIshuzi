@@ -39,6 +39,7 @@ const requiredTrainingRoomSelectors = [
   ".teacher-observation-calibration",
   ".teacher-observation-meta",
   ".camera-device-control",
+  ".camera-preview-toggle",
   ".camera-diagnostic",
   ".training-target-banner",
   ".training-target-focus",
@@ -244,6 +245,8 @@ const layoutAssertions = [
       && /setSelectedDeviceId/.test(trainingRoomSource)
       && /cameraFailureMessage/.test(trainingRoomSource)
       && /camera-device-control/.test(trainingRoomSource)
+      && /camera-preview-toggle/.test(trainingRoomSource)
+      && /setCameraEnabled\(true\)/.test(trainingRoomSource)
       && /camera-diagnostic/.test(trainingRoomSource)
   },
   {
