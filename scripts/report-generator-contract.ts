@@ -94,7 +94,74 @@ const events: ClassroomEvent[] = [
     actor: "教师观察",
     content: "教师观察：面部可见，置信度 82；头部方向正向；表情变化适中；画面稳定。",
     timestamp: "2026-05-24T08:04:00.000Z",
-    metadata: { observation: { faceVisible: true, stability: 80 } }
+    metadata: {
+      observation: {
+        source: "mediapipe",
+        faceVisible: true,
+        faceConfidence: 82,
+        headDirection: "front",
+        expressionActivity: 58,
+        stability: 80,
+        capturedAt: "2026-05-24T08:04:00.000Z"
+      }
+    }
+  },
+  {
+    id: "event-vision-low-confidence",
+    sessionId: session.id,
+    type: "teacher_observation",
+    actor: "鏁欏笀瑙傚療",
+    content: "摄像头观察：面部不可见，识别置信度 32。",
+    timestamp: "2026-05-24T08:04:10.000Z",
+    metadata: {
+      observation: {
+        source: "mediapipe",
+        faceVisible: false,
+        faceConfidence: 32,
+        headDirection: "unknown",
+        expressionActivity: 20,
+        stability: 74,
+        capturedAt: "2026-05-24T08:04:10.000Z"
+      }
+    }
+  },
+  {
+    id: "event-vision-down",
+    sessionId: session.id,
+    type: "teacher_observation",
+    actor: "鏁欏笀瑙傚療",
+    content: "摄像头观察：教师低头看稿，正面对镜减少。",
+    timestamp: "2026-05-24T08:04:20.000Z",
+    metadata: {
+      observation: {
+        source: "mediapipe",
+        faceVisible: true,
+        faceConfidence: 76,
+        headDirection: "down",
+        expressionActivity: 51,
+        stability: 71,
+        capturedAt: "2026-05-24T08:04:20.000Z"
+      }
+    }
+  },
+  {
+    id: "event-vision-unstable",
+    sessionId: session.id,
+    type: "teacher_observation",
+    actor: "鏁欏笀瑙傚療",
+    content: "摄像头观察：教师偏离镜头，画面稳定度偏低。",
+    timestamp: "2026-05-24T08:04:25.000Z",
+    metadata: {
+      observation: {
+        source: "mediapipe",
+        faceVisible: true,
+        faceConfidence: 69,
+        headDirection: "right",
+        expressionActivity: 49,
+        stability: 31,
+        capturedAt: "2026-05-24T08:04:25.000Z"
+      }
+    }
   },
   {
     id: "event-process-1",
@@ -177,6 +244,12 @@ assert.ok(report.studentResponses.some((item) => item.studentName === "阿哲" &
 assert.ok(report.teacherStrategyHits.some((item) => item.evidenceEventIds.includes("event-strategy-1")));
 assert.ok(report.recommendations.length >= 2);
 assert.ok(report.recommendations.every((item) => item.evidenceEventIds.length > 0));
+assert.ok(report.teacherObservation);
+assert.equal(report.teacherObservation?.sampleCount, 4);
+assert.ok((report.teacherObservation?.faceVisibleRate ?? 100) < 100);
+assert.ok((report.teacherObservation?.frontFacingRate ?? 100) < 100);
+assert.ok(report.teacherObservation?.evidenceEventIds.includes("event-vision-low-confidence"));
+assert.match(report.teacherObservation?.summary ?? "", /摄像头|镜头|低头|偏离|置信度/);
 assert.equal(report.processEvaluation?.focus, lessonPlan.processEvaluation?.focus);
 assert.match(report.processEvaluation?.summary ?? "", /过程性评价|同伴互评|学生复述|教师记录/);
 assert.ok(report.processEvaluation?.stagePoints.some((item) => item.includes("x、y")));

@@ -269,6 +269,7 @@ export interface EvaluationReport {
   studentResponses: StudentResponseSummary[];
   teacherStrategyHits: TeacherStrategyHit[];
   recommendations: EvidenceBoundRecommendation[];
+  teacherObservation?: ReportTeacherObservation;
   processEvaluation?: ReportProcessEvaluation;
   exportMarkdown: string;
   exportHtml: string;
@@ -341,6 +342,18 @@ export interface EvidenceBoundRecommendation {
   priority: "high" | "medium" | "low";
   action: string;
   evidenceEventIds: string[];
+}
+
+export interface ReportTeacherObservation {
+  sampleCount: number;
+  faceVisibleRate: number;
+  averageConfidence: number;
+  frontFacingRate: number;
+  averageStability: number;
+  issueCount: number;
+  issueLabels: string[];
+  evidenceEventIds: string[];
+  summary: string;
 }
 
 export interface ReportProcessEvaluation extends ProcessEvaluationDesign {

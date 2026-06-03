@@ -2097,6 +2097,53 @@ meter::-webkit-meter-optimum-value {
   line-height: 1;
 }
 
+.report-teacher-observation {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #d4dce6;
+  border-radius: var(--radius);
+  background: #f7fafc;
+}
+
+.report-teacher-observation p {
+  color: var(--muted);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.report-teacher-observation__metrics {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.report-teacher-observation__metrics span,
+.report-teacher-observation__issues,
+.report-teacher-observation__evidence {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 9px;
+  color: var(--muted);
+  border-radius: 6px;
+  background: #ffffff;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.report-teacher-observation__metrics strong {
+  color: var(--brand-strong);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.report-teacher-observation__issues strong,
+.report-teacher-observation__evidence strong {
+  color: var(--brand-strong);
+}
+
 .report-process-evaluation {
   display: grid;
   gap: 10px;
@@ -2689,6 +2736,7 @@ meter::-webkit-meter-optimum-value {
   .reports-grid,
   .report-detail-grid,
   .report-evidence-list,
+  .report-teacher-observation__metrics,
   .report-process-evaluation__meta,
   .process-evaluation-summary,
   .process-evaluation-fields,

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 const css = readFileSync("src/client/styles.css", "utf8");
 const plannerSource = readFileSync("src/client/components/CoursePlannerPage.tsx", "utf8");
 const trainingRoomSource = readFileSync("src/client/components/TrainingRoom.tsx", "utf8");
+const reportsPageSource = readFileSync("src/client/components/ReportsPage.tsx", "utf8");
 const teacherObservationPanelSource = readFileSync("src/client/components/training/TeacherObservationPanel.tsx", "utf8");
 
 const requiredTrainingRoomSelectors = [
@@ -97,6 +98,10 @@ const requiredReportSelectors = [
   ".report-context-event--target",
   ".report-recommendation-list",
   ".report-recommendation-card",
+  ".report-teacher-observation",
+  ".report-teacher-observation__metrics",
+  ".report-teacher-observation__issues",
+  ".report-teacher-observation__evidence",
   ".report-process-evaluation",
   ".training-target-button",
   ".report-timeline-table",
@@ -256,6 +261,14 @@ const layoutAssertions = [
       && /setObservationSaveState\("saving"\)/.test(trainingRoomSource)
       && /setObservationSaveState\("saved"\)/.test(trainingRoomSource)
       && /setObservationSaveState\("error"\)/.test(trainingRoomSource)
+  },
+  {
+    name: "reports page renders teacher camera observation section",
+    ok: /report\.teacherObservation/.test(reportsPageSource)
+      && /report-teacher-observation/.test(reportsPageSource)
+      && /report-teacher-observation__metrics/.test(reportsPageSource)
+      && /report-teacher-observation__issues/.test(reportsPageSource)
+      && /report-teacher-observation__evidence/.test(reportsPageSource)
   },
   {
     name: "teacher observation panel shows calibration, sampling time, confidence, and save state",

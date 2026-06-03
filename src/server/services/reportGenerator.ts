@@ -8,9 +8,11 @@ import type {
   ModelProviderConfig,
   ReportProcessEvaluation,
   ReportEvidenceNode,
+  ReportTeacherObservation,
   ReportTimelineItem,
   StudentAgent,
   StudentResponseSummary,
+  TeacherObservationPayload,
   TeacherStrategyHit,
   TrainingSession
 } from "../../shared/types.js";
@@ -114,6 +116,85 @@ function minutesBetween(start?: string, end?: string) {
   const endMs = end ? new Date(end).getTime() : Number.NaN;
   if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) return 0;
   return Math.round((endMs - startMs) / 60000);
+}
+
+function roundMetric(value: number) {
+  return Math.round(value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isTeacherObservationPayload(value: unknown): value is TeacherObservationPayload {
+  if (!isRecord(value)) return false;
+  return typeof value.faceVisible === "boolean"
+    && typeof value.faceConfidence === "number"
+    && typeof value.headDirection === "string"
+    && typeof value.expressionActivity === "number"
+    && typeof value.stability === "number"
+    && typeof value.capturedAt === "string";
+}
+
+function directionIssueLabel(direction: TeacherObservationPayload["headDirection"]) {
+  if (direction === "down") return "低头看稿";
+  if (direction === "left" || direction === "right") return "偏离镜头";
+  if (direction === "up") return "仰头偏离镜头";
+  return "镜头朝向偏离";
+}
+
+function createTeacherObservationSummary(events: ClassroomEvent[]): ReportTeacherObservation | undefined {
+  const observations = events
+    .filter((event) => event.type === "teacher_observation")
+    .map((event) => ({
+      event,
+      observation: isRecord(event.metadata) ? event.metadata.observation : undefined
+    }))
+    .filter((item): item is { event: ClassroomEvent; observation: TeacherObservationPayload } => isTeacherObservationPayload(item.observation));
+
+  if (!observations.length) return undefined;
+
+  const issueItems = observations.map((item) => {
+    const labels: string[] = [];
+    if (!item.observation.faceVisible || item.observation.faceConfidence < 45) labels.push("识别置信度不足");
+    if (item.observation.headDirection !== "front" && item.observation.headDirection !== "unknown") {
+      labels.push(directionIssueLabel(item.observation.headDirection));
+    }
+    if (item.observation.stability < 45) labels.push("画面稳定度偏低");
+    return { ...item, labels };
+  });
+  const itemsWithIssues = issueItems.filter((item) => item.labels.length > 0);
+  const issueLabels = Array.from(new Set(itemsWithIssues.flatMap((item) => item.labels)));
+  const newestFirst = (a: { event: ClassroomEvent }, b: { event: ClassroomEvent }) =>
+    new Date(b.event.timestamp).getTime() - new Date(a.event.timestamp).getTime();
+  const evidenceEventIds = [
+    ...itemsWithIssues.slice().sort(newestFirst).map((item) => item.event.id),
+    ...issueItems.filter((item) => !item.labels.length).sort(newestFirst).map((item) => item.event.id)
+  ].slice(0, 6);
+  const sampleCount = observations.length;
+  const faceVisibleCount = observations.filter((item) => item.observation.faceVisible).length;
+  const frontFacingCount = observations.filter((item) => item.observation.headDirection === "front").length;
+  const confidenceTotal = observations.reduce((sum, item) => sum + item.observation.faceConfidence, 0);
+  const stabilityTotal = observations.reduce((sum, item) => sum + item.observation.stability, 0);
+  const faceVisibleRate = roundMetric((faceVisibleCount / sampleCount) * 100);
+  const averageConfidence = roundMetric(confidenceTotal / sampleCount);
+  const frontFacingRate = roundMetric((frontFacingCount / sampleCount) * 100);
+  const averageStability = roundMetric(stabilityTotal / sampleCount);
+  const summary = issueLabels.length
+    ? `摄像头观察共 ${sampleCount} 次采样，面部可见率 ${faceVisibleRate}%，正对镜头率 ${frontFacingRate}%，平均置信度 ${averageConfidence}。主要问题：${issueLabels.join("、")}。`
+    : `摄像头观察共 ${sampleCount} 次采样，面部可见率 ${faceVisibleRate}%，正对镜头率 ${frontFacingRate}%，画面整体稳定。`;
+
+  return {
+    sampleCount,
+    faceVisibleRate,
+    averageConfidence,
+    frontFacingRate,
+    averageStability,
+    issueCount: itemsWithIssues.length,
+    issueLabels,
+    evidenceEventIds,
+    summary
+  };
 }
 
 function buildOverview(session: TrainingSession, events: ClassroomEvent[]): EvaluationReport["overview"] {
@@ -342,6 +423,18 @@ function createProcessEvaluation(
 }
 
 export function renderReportMarkdown(report: EvaluationReport) {
+  const teacherObservationLines = report.teacherObservation ? [
+    "## 教师镜头观察",
+    report.teacherObservation.summary,
+    `- 采样次数：${report.teacherObservation.sampleCount}`,
+    `- 面部可见率：${report.teacherObservation.faceVisibleRate}%`,
+    `- 平均置信度：${report.teacherObservation.averageConfidence}`,
+    `- 正对镜头率：${report.teacherObservation.frontFacingRate}%`,
+    `- 平均稳定度：${report.teacherObservation.averageStability}`,
+    `- 观察问题：${report.teacherObservation.issueLabels.length ? report.teacherObservation.issueLabels.join("、") : "未发现明显问题"}`,
+    `- 关联证据：${report.teacherObservation.evidenceEventIds.join(", ")}`,
+    ""
+  ] : [];
   const lines = [
     `# ${report.summary.includes(report.sessionId) ? "课后评价报告" : report.summary.split("”")[0].replace(/^本次“/, "") || "课后评价报告"}`,
     "",
@@ -362,6 +455,7 @@ export function renderReportMarkdown(report: EvaluationReport) {
     "## 学生画像响应",
     ...report.studentResponses.map((item) => `- ${item.studentName}（${item.profile}）：${item.diagnosis}`),
     "",
+    ...teacherObservationLines,
     ...(report.processEvaluation ? [
       "## 过程性评价",
       `- 评价重点：${report.processEvaluation.focus}`,
@@ -385,6 +479,9 @@ export function renderReportHtml(report: EvaluationReport) {
   const recommendations = report.recommendations
     .map((item) => `<li><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.action)}</span><em>证据：${escapeHtml(item.evidenceEventIds.join(", "))}</em></li>`)
     .join("");
+  const teacherObservation = report.teacherObservation
+    ? `<section><h2>教师镜头观察</h2><p>${escapeHtml(report.teacherObservation.summary)}</p><ul><li>采样次数：${report.teacherObservation.sampleCount}</li><li>面部可见率：${report.teacherObservation.faceVisibleRate}%</li><li>平均置信度：${report.teacherObservation.averageConfidence}</li><li>正对镜头率：${report.teacherObservation.frontFacingRate}%</li><li>平均稳定度：${report.teacherObservation.averageStability}</li><li>观察问题：${escapeHtml(report.teacherObservation.issueLabels.length ? report.teacherObservation.issueLabels.join("、") : "未发现明显问题")}</li><li>关联证据：${escapeHtml(report.teacherObservation.evidenceEventIds.join(", "))}</li></ul></section>`
+    : "";
   const processEvaluation = report.processEvaluation
     ? `<section><h2>过程性评价</h2><p>${escapeHtml(report.processEvaluation.summary)}</p><ul>${report.processEvaluation.stagePoints.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></section>`
     : "";
@@ -394,6 +491,7 @@ export function renderReportHtml(report: EvaluationReport) {
     `<p>${escapeHtml(report.summary)}</p>`,
     "<h2>关键时间线</h2>",
     `<ol>${timeline}</ol>`,
+    teacherObservation,
     processEvaluation,
     "<h2>改进建议</h2>",
     `<ol>${recommendations}</ol>`,
@@ -422,6 +520,7 @@ export function createLocalEvaluationReport({
   const studentResponses = createStudentResponses(students, events);
   const teacherStrategyHits = createStrategyHits(events);
   const recommendations = createRecommendations(metrics, evidence, studentResponses);
+  const teacherObservation = createTeacherObservationSummary(events);
   const processEvaluation = createProcessEvaluation(lessonPlan, evidence);
   const strengths = createStrengths(metrics, overview);
   const improvements = createImprovements(metrics, recommendations);
@@ -440,6 +539,7 @@ export function createLocalEvaluationReport({
     studentResponses,
     teacherStrategyHits,
     recommendations,
+    teacherObservation,
     processEvaluation,
     exportMarkdown: "",
     exportHtml: "",

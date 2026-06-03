@@ -246,6 +246,31 @@ export function ReportsPage({ reports, sessions, onDeleteReport, onCreateTrainin
                   <span><strong>{report.overview.durationMinutes > 0 ? report.overview.durationMinutes : "<1"}</strong>分钟</span>
                 </div>
 
+                {report.teacherObservation ? (
+                  <div className="report-teacher-observation">
+                    <div className="report-section-title">
+                      <BarChart3 size={18} />
+                      <h3>教师镜头观察</h3>
+                    </div>
+                    <p>{report.teacherObservation.summary}</p>
+                    <div className="report-teacher-observation__metrics">
+                      <span><strong>{report.teacherObservation.sampleCount}</strong>采样次数</span>
+                      <span><strong>{report.teacherObservation.faceVisibleRate}%</strong>面部可见率</span>
+                      <span><strong>{report.teacherObservation.averageConfidence}</strong>平均置信度</span>
+                      <span><strong>{report.teacherObservation.frontFacingRate}%</strong>正对镜头率</span>
+                      <span><strong>{report.teacherObservation.averageStability}</strong>平均稳定度</span>
+                    </div>
+                    <div className="report-teacher-observation__issues">
+                      <strong>观察问题</strong>
+                      <span>{report.teacherObservation.issueLabels.length ? report.teacherObservation.issueLabels.join("、") : "未发现明显问题"}</span>
+                    </div>
+                    <div className="report-teacher-observation__evidence">
+                      <strong>关联证据</strong>
+                      <span>{report.teacherObservation.evidenceEventIds.map((eventId) => evidenceByEventId.get(eventId)?.actor ?? eventId).join("、")}</span>
+                    </div>
+                  </div>
+                ) : null}
+
                 {report.processEvaluation ? (
                   <div className="report-process-evaluation">
                     <div className="report-section-title">
