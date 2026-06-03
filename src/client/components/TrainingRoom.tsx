@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Camera,
   CheckCircle2,
   CircleDot,
+  Eraser,
   Loader2,
   Mic,
   MicOff,
@@ -19,24 +20,32 @@ import {
   ResponsiveContainer
 } from "recharts";
 import { api } from "../api";
-import { useCamera } from "../hooks/useCamera";
+import { useCamera, type CameraFailureReason } from "../hooks/useCamera";
 import { useSpeechRecognition } from "../hooks/useSpeechRecognition";
+import { useTeacherVision } from "../hooks/useTeacherVision";
+import { useTranscriptBuffer } from "../hooks/useTranscriptBuffer";
+import { shouldSendTeacherTurnFromKey } from "../utils/teacherInput";
 import type {
   ClassroomEvent,
   ClassroomMetrics,
   EvaluationReport,
+  ProcessEvidenceType,
   StudentAgent,
   StudentRuntimeState,
+  TrainingTarget,
   TrainingSession
 } from "../../shared/types";
 import { StudentPortrait } from "./training/StudentPortrait";
+import { TeacherObservationPanel, type TeacherObservationSaveState } from "./training/TeacherObservationPanel";
 
 interface TrainingRoomProps {
   session: TrainingSession;
   students: StudentAgent[];
   initialEvents: ClassroomEvent[];
   initialRuntimeStates: StudentRuntimeState[];
+  trainingTarget?: TrainingTarget;
   onSessionChange: (session: TrainingSession) => void;
+  onTrainingTargetChange?: (target: TrainingTarget) => void;
   onReport: (report: EvaluationReport) => void;
 }
 
@@ -51,6 +60,14 @@ const defaultMetrics: ClassroomMetrics = {
   questioning: 48,
   engagement: 62
 };
+
+const processEvidenceTypes: ProcessEvidenceType[] = [
+  "学生复述",
+  "追问回应",
+  "学生自评",
+  "同伴互评",
+  "教师观察"
+];
 
 function metricColor(value: number, inverse = false) {
   if (inverse) {
@@ -108,6 +125,8 @@ function eventTypeLabel(type: ClassroomEvent["type"]) {
       return "教师观察";
     case "transcript_segment":
       return "语音转写";
+    case "process_evaluation":
+      return "过程评价";
     case "report_evidence":
       return "报告证据";
     default:
@@ -125,12 +144,71 @@ function timelineStatus(event: ClassroomEvent) {
   return "已同步";
 }
 
+function speechStatusLabel(status: ReturnType<typeof useSpeechRecognition>["status"]) {
+  switch (status) {
+    case "listening":
+      return "正在连续转写";
+    case "unsupported":
+      return "浏览器不支持语音";
+    case "blocked":
+      return "麦克风权限未开启";
+    case "error":
+      return "语音识别异常";
+    default:
+      return "语音待命";
+  }
+}
+
+function cameraFailureMessage(reason?: CameraFailureReason) {
+  switch (reason) {
+    case "unsupported":
+      return "当前浏览器不支持摄像头调用，请换用支持 MediaDevices 的浏览器。";
+    case "permission-denied":
+      return "摄像头权限未授权，请在浏览器地址栏或系统隐私设置中允许访问。";
+    case "device-busy":
+      return "摄像头可能正被其他软件占用，请关闭会议软件或录屏工具后重试。";
+    case "not-found":
+      return "未检测到可用摄像头，请检查外接摄像头连接后刷新设备列表。";
+    case "unknown":
+      return "摄像头启动失败，请检查设备连接、浏览器权限或重新切换设备。";
+    default:
+      return "";
+  }
+}
+
+function focusMetricLabel(metric: string) {
+  switch (metric) {
+    case "clarity":
+      return "讲解清晰度";
+    case "questioning":
+      return "提问质量";
+    case "confusion":
+      return "困惑度";
+    case "engagement":
+      return "参与度";
+    case "interaction":
+      return "互动度";
+    case "attention":
+      return "注意力";
+    case "systemSuggestions":
+      return "即时建议";
+    case "teacherObservation.frontFacingRate":
+      return "正对镜头率";
+    case "teacherObservation.averageStability":
+      return "镜头稳定度";
+    default:
+      return metric;
+  }
+}
+
 export function TrainingRoom({
   session,
   students,
   initialEvents,
   initialRuntimeStates,
+  trainingTarget,
   onSessionChange,
+  onTrainingTargetChange,
   onReport
 }: TrainingRoomProps) {
   const [events, setEvents] = useState<ClassroomEvent[]>(initialEvents);
@@ -141,23 +219,60 @@ export function TrainingRoom({
     return lastMetric ? (lastMetric.metadata as unknown as ClassroomMetrics) : defaultMetrics;
   });
   const [submitting, setSubmitting] = useState(false);
+  const [processEvidenceType, setProcessEvidenceType] = useState<ProcessEvidenceType>("学生复述");
+  const [processTargetStudentId, setProcessTargetStudentId] = useState("");
+  const [processEvidenceNote, setProcessEvidenceNote] = useState("");
+  const [processEvidenceSaving, setProcessEvidenceSaving] = useState(false);
+  const [processEvidenceError, setProcessEvidenceError] = useState("");
   const [cameraEnabled, setCameraEnabled] = useState(false);
+  const [observationError, setObservationError] = useState("");
+  const [observationSaveState, setObservationSaveState] = useState<TeacherObservationSaveState>("idle");
+  const [lastObservationSavedAt, setLastObservationSavedAt] = useState<string | undefined>(undefined);
   const [modelNotice, setModelNotice] = useState("本地模拟已待命");
-  const { videoRef, status: cameraStatus } = useCamera(cameraEnabled);
+  const {
+    videoRef,
+    status: cameraStatus,
+    devices,
+    selectedDeviceId,
+    setSelectedDeviceId,
+    refreshDevices,
+    failureReason
+  } = useCamera(cameraEnabled);
+  const vision = useTeacherVision(cameraEnabled && cameraStatus === "active", videoRef);
   const selectedStudents = students.filter((student) => session.selectedStudentIds.includes(student.id));
+  const savedTranscriptIdsRef = useRef<Set<string>>(new Set());
+  const lastSavedObservationRef = useRef<{ signature: string; capturedAt: number } | undefined>(undefined);
+  const transcript = useTranscriptBuffer(session.id);
+  const speech = useSpeechRecognition(transcript.acceptSegment);
 
-  const handleSpeechText = useCallback((text: string) => {
-    setTeacherText((current) => `${current}${current ? " " : ""}${text}`);
+  const appendEvents = useCallback((incoming: ClassroomEvent[]) => {
+    setEvents((current) => {
+      const existingIds = new Set(current.map((event) => event.id));
+      const nextEvents = incoming.filter((event) => !existingIds.has(event.id));
+      return nextEvents.length ? [...current, ...nextEvents] : current;
+    });
   }, []);
-  const speech = useSpeechRecognition(handleSpeechText);
 
   useEffect(() => {
     setEvents(initialEvents);
+    savedTranscriptIdsRef.current = new Set(
+      initialEvents
+        .filter((event) => event.type === "transcript_segment")
+        .map((event) => String(event.metadata.transcriptId ?? ""))
+        .filter(Boolean)
+    );
   }, [initialEvents, session.id]);
 
   useEffect(() => {
     setRuntimeStates(initialRuntimeStates);
   }, [initialRuntimeStates, session.id]);
+
+  useEffect(() => {
+    lastSavedObservationRef.current = undefined;
+    setObservationError("");
+    setObservationSaveState("idle");
+    setLastObservationSavedAt(undefined);
+  }, [session.id]);
 
   useEffect(() => {
     if (session.status !== "active") return undefined;
@@ -168,7 +283,7 @@ export function TrainingRoom({
           if (cancelled) return;
           setRuntimeStates(result.runtimeStates);
           if (result.stateEvents.length) {
-            setEvents((current) => [...current, ...result.stateEvents]);
+            appendEvents(result.stateEvents);
           }
         })
         .catch(() => undefined);
@@ -177,13 +292,69 @@ export function TrainingRoom({
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [session.id, session.status]);
+  }, [appendEvents, session.id, session.status]);
+
+  useEffect(() => {
+    const unsavedSegments = transcript.finalSegments.filter((segment) => {
+      const id = segment.id ?? "";
+      return id && !savedTranscriptIdsRef.current.has(id);
+    });
+    if (!unsavedSegments.length) return;
+
+    unsavedSegments.forEach((segment) => segment.id && savedTranscriptIdsRef.current.add(segment.id));
+    api.saveTranscriptSegments(session.id, { segments: unsavedSegments })
+      .then((result) => {
+        appendEvents(result.transcriptEvents);
+      })
+      .catch((error) => {
+        unsavedSegments.forEach((segment) => segment.id && savedTranscriptIdsRef.current.delete(segment.id));
+        transcript.setLastError(error instanceof Error ? error.message : "保存转写片段失败。");
+      });
+  }, [appendEvents, session.id, transcript, transcript.finalSegments]);
+
+  useEffect(() => {
+    const observation = vision.latest?.payload;
+    if (!observation || session.status !== "active") return;
+
+    const capturedAt = new Date(observation.capturedAt).getTime();
+    const signature = [
+      observation.faceVisible,
+      observation.headDirection,
+      Math.round(observation.expressionActivity / 10),
+      Math.round(observation.stability / 10)
+    ].join(":");
+    const previous = lastSavedObservationRef.current;
+    if (previous && previous.signature === signature && capturedAt - previous.capturedAt < 12000) {
+      return;
+    }
+
+    lastSavedObservationRef.current = { signature, capturedAt };
+    setObservationSaveState("saving");
+    api.saveTeacherObservation(session.id, observation)
+      .then((result) => {
+        appendEvents([
+          result.observationEvent,
+          ...(result.suggestionEvent ? [result.suggestionEvent] : [])
+        ]);
+        setObservationError("");
+        setObservationSaveState("saved");
+        setLastObservationSavedAt(new Date().toISOString());
+      })
+      .catch((error) => {
+        lastSavedObservationRef.current = undefined;
+        setObservationSaveState("error");
+        setObservationError(error instanceof Error ? error.message : "保存教师观察失败。");
+      });
+  }, [appendEvents, session.id, session.status, vision.latest]);
+
+  const cameraDiagnostic = cameraFailureMessage(failureReason);
 
   const timeline = useMemo(
     () => events.filter((event) => event.type !== "classroom_metric").slice(-8).reverse(),
     [events]
   );
   const latestSuggestion = [...events].reverse().find((event) => event.type === "system_suggestion")?.content
+    ?? (trainingTarget ? `本次复训目标：${trainingTarget.action}` : undefined)
     ?? "开始试讲后，系统会根据教师发言和 AI 学生反应生成即时策略建议。";
 
   const studentSnapshots = useMemo(() => {
@@ -210,6 +381,10 @@ export function TrainingRoom({
   const activeCount = studentSnapshots.filter(({ pose }) => pose !== "distracted").length;
   const questionCount = events.filter((event) => event.type === "student_question").length;
   const distractedCount = studentSnapshots.filter(({ pose }) => pose === "distracted").length;
+  const recentProcessEvidence = useMemo(
+    () => events.filter((event) => event.type === "process_evaluation").slice(-4).reverse(),
+    [events]
+  );
 
   const radarData = [
     { metric: "节奏", value: metrics.pace },
@@ -218,6 +393,17 @@ export function TrainingRoom({
     { metric: "参与", value: metrics.engagement },
     { metric: "互动", value: metrics.interaction }
   ];
+
+  function requestCameraPreview() {
+    void refreshDevices();
+    if (!cameraEnabled || cameraStatus !== "blocked") {
+      setCameraEnabled(true);
+      return;
+    }
+
+    setCameraEnabled(false);
+    window.setTimeout(() => setCameraEnabled(true), 0);
+  }
 
   async function startSession() {
     const updated = await api.startSession(session.id);
@@ -229,19 +415,93 @@ export function TrainingRoom({
     setSubmitting(true);
     try {
       const result = await api.sendTurn(session.id, teacherText.trim(), inputMode);
-      setEvents((current) => [...current, result.teacherEvent, ...result.stateEvents, ...result.responses, result.metricEvent]);
+      appendEvents([result.teacherEvent, ...result.stateEvents, ...result.responses, result.metricEvent]);
       setRuntimeStates(result.runtimeStates);
       setMetrics(result.metrics);
       setTeacherText("");
-      setModelNotice(result.usedModel ? "本轮由大模型生成" : "本轮由本地模拟生成");
+      setModelNotice(result.usedModel ? "本轮由大模型生成" : `本轮本地模拟：${result.fallbackReason || "未启用真实模型"}`);
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  function handleTeacherInputKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (!shouldSendTeacherTurnFromKey({
+      key: event.key,
+      shiftKey: event.shiftKey,
+      isComposing: event.nativeEvent.isComposing
+    })) {
+      return;
+    }
+
+    event.preventDefault();
+    void sendTurn("manual");
+  }
+
+  async function sendTranscriptTurn() {
+    const segments = transcript.finalSegments;
+    if (!segments.length || submitting) return;
+    setSubmitting(true);
+    transcript.setLastError("");
+    try {
+      const result = await api.saveTranscriptSegments(session.id, {
+        segments,
+        sendAsTurn: true
+      });
+      result.transcriptEvents.forEach((event) => {
+        const transcriptId = String(event.metadata.transcriptId ?? "");
+        if (transcriptId) savedTranscriptIdsRef.current.add(transcriptId);
+      });
+      appendEvents(result.transcriptEvents);
+      if (result.turnResult) {
+        appendEvents([
+          result.turnResult.teacherEvent,
+          ...result.turnResult.stateEvents,
+          ...result.turnResult.responses,
+          result.turnResult.metricEvent
+        ]);
+        setRuntimeStates(result.turnResult.runtimeStates);
+        setMetrics(result.turnResult.metrics);
+        setModelNotice(result.turnResult.usedModel ? "本轮由大模型生成" : `本轮本地模拟：${result.turnResult.fallbackReason || "未启用真实模型"}`);
+      }
+      transcript.flushFinalSegments();
+    } catch (error) {
+      transcript.setLastError(error instanceof Error ? error.message : "发送转写回合失败。");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function recordProcessEvidence() {
+    const note = processEvidenceNote.trim();
+    if (!note || processEvidenceSaving || session.status === "completed") return;
+    setProcessEvidenceSaving(true);
+    setProcessEvidenceError("");
+    try {
+      if (session.status === "draft") {
+        const updated = await api.startSession(session.id);
+        onSessionChange(updated);
+      }
+      const result = await api.recordProcessEvidence(session.id, {
+        evidenceType: processEvidenceType,
+        targetStudentId: processTargetStudentId || undefined,
+        note
+      });
+      appendEvents([result.event]);
+      setProcessEvidenceNote("");
+    } catch (error) {
+      setProcessEvidenceError(error instanceof Error ? error.message : "保存过程评价证据失败。");
+    } finally {
+      setProcessEvidenceSaving(false);
     }
   }
 
   async function completeSession() {
     const result = await api.completeSession(session.id);
     onSessionChange(result.session);
+    if (result.trainingTarget) {
+      onTrainingTargetChange?.(result.trainingTarget);
+    }
     onReport(result.report);
   }
 
@@ -252,6 +512,15 @@ export function TrainingRoom({
           <span className="eyebrow">Teacher Session Area</span>
           <h1>{session.courseTitle}</h1>
           <p>{session.topic} · {session.status === "active" ? "实训进行中" : session.status === "completed" ? "已完成" : "待开始"}</p>
+          {trainingTarget ? (
+            <div className="training-target-banner">
+              <span>{trainingTarget.status === "completed" ? "复训已完成" : "复训目标"}</span>
+              <strong>{trainingTarget.recommendationTitle}</strong>
+              <em>{trainingTarget.template.title}</em>
+              <small>{trainingTarget.template.scenario}</small>
+              <small>{trainingTarget.recommendationDetail}</small>
+            </div>
+          ) : null}
         </div>
         <div className="header-controls">
           <span className="status-pill">
@@ -292,16 +561,53 @@ export function TrainingRoom({
                 {cameraEnabled ? <VideoOff size={18} /> : <Camera size={18} />}
               </button>
             </div>
+            <label className="camera-device-control">
+              <span>摄像头设备</span>
+              <select
+                value={selectedDeviceId}
+                onChange={(event) => setSelectedDeviceId(event.target.value)}
+                onFocus={() => void refreshDevices()}
+                disabled={!devices.length}
+              >
+                <option value="">默认摄像头</option>
+                {devices.map((device, index) => (
+                  <option value={device.deviceId} key={device.deviceId || `camera-${index}`}>
+                    {device.label || `摄像头 ${index + 1}`}
+                  </option>
+                ))}
+              </select>
+            </label>
             {cameraEnabled && cameraStatus === "active" ? (
               <video ref={videoRef} autoPlay playsInline muted />
             ) : (
-              <div className="camera-placeholder">
+              <button
+                className="camera-placeholder camera-preview-toggle"
+                type="button"
+                onClick={requestCameraPreview}
+                disabled={cameraStatus === "requesting"}
+              >
                 <Camera size={44} />
-                <strong>{cameraStatus === "blocked" ? "摄像头权限未开启" : "摄像头预览区"}</strong>
-                <span>权限不可用时仍可通过手动输入完成试讲演示。</span>
-              </div>
+                <strong>{cameraStatus === "blocked" ? "摄像头不可用" : cameraStatus === "requesting" ? "正在开启摄像头" : "摄像头预览区"}</strong>
+                <span>
+                  {cameraStatus === "blocked"
+                    ? "调整浏览器或系统权限后，点击这里重试摄像头。"
+                    : "点击这里开启摄像头预览。"}
+                </span>
+              </button>
             )}
+            {cameraDiagnostic ? (
+              <p className="camera-diagnostic">{cameraDiagnostic}</p>
+            ) : null}
           </div>
+
+          <TeacherObservationPanel
+            status={vision.status}
+            observation={vision.latest?.payload}
+            recording={cameraEnabled && cameraStatus === "active"}
+            error={vision.error || observationError}
+            observationSaveState={observationSaveState}
+            lastObservationSavedAt={lastObservationSavedAt}
+          />
 
           <div className="screen-card lesson-card">
             <div className="screen-card__title">
@@ -319,28 +625,111 @@ export function TrainingRoom({
             <textarea
               value={teacherText}
               onChange={(event) => setTeacherText(event.target.value)}
+              onKeyDown={handleTeacherInputKeyDown}
               placeholder="输入教师发言，例如：同学们，谁能说说直角三角形里最长的边是哪一条？"
             />
             <div className="input-controls">
-              <button
-                className="ghost-button"
-                type="button"
-                disabled={!speech.supported}
-                onClick={() => {
-                  if (speech.listening) {
-                    speech.stop();
-                  } else {
-                    speech.start();
-                  }
-                }}
-              >
-                {speech.listening ? <MicOff size={17} /> : <Mic size={17} />}
-                {speech.supported ? (speech.listening ? "停止识别" : "语音转写") : "浏览器不支持语音"}
-              </button>
               <button className="primary-button" type="button" onClick={() => sendTurn("manual")} disabled={submitting}>
                 {submitting ? <Loader2 className="spin" size={17} /> : <Send size={17} />}
                 发送课堂回合
               </button>
+            </div>
+            <div className="transcript-panel">
+              <div className="screen-card__title">
+                <span><Mic size={15} /> 语音转写</span>
+                <span className={`speech-status-pill speech-status-pill--${speech.status}`}>{speechStatusLabel(speech.status)}</span>
+              </div>
+              <div className="transcript-panel__live">
+                <strong>实时</strong>
+                <span>{transcript.interimText || "开启后会显示尚未定稿的实时识别文本。"}</span>
+              </div>
+              <div className="transcript-segment-list">
+                {transcript.finalSegments.slice(-3).map((segment) => (
+                  <span key={segment.id}>{segment.text}</span>
+                ))}
+                {!transcript.finalSegments.length ? <span>暂无最终转写片段。</span> : null}
+              </div>
+              {(speech.error || transcript.lastError) ? <p className="transcript-error">{speech.error || transcript.lastError}</p> : null}
+              <div className="transcript-actions">
+                <button
+                  className="ghost-button"
+                  type="button"
+                  disabled={!speech.supported}
+                  onClick={() => {
+                    if (speech.listening) {
+                      speech.stop();
+                    } else {
+                      speech.start();
+                    }
+                  }}
+                >
+                  {speech.listening ? <MicOff size={17} /> : <Mic size={17} />}
+                  {speech.listening ? "停止连续转写" : "开始连续转写"}
+                </button>
+                <button className="ghost-button" type="button" onClick={transcript.clearTranscript}>
+                  <Eraser size={17} />
+                  清空转写
+                </button>
+                <button className="primary-button" type="button" onClick={sendTranscriptTurn} disabled={submitting || !transcript.finalSegments.length}>
+                  {submitting ? <Loader2 className="spin" size={17} /> : <Send size={17} />}
+                  用转写发送回合
+                </button>
+              </div>
+            </div>
+
+            <div className="process-evidence-panel">
+              <div className="screen-card__title">
+                <span><CheckCircle2 size={15} /> 过程评价记录</span>
+                <span className="speech-status-pill">课后报告证据</span>
+              </div>
+              <div className="process-evidence-type-grid">
+                {processEvidenceTypes.map((type) => (
+                  <button
+                    className={processEvidenceType === type ? "process-evidence-type process-evidence-type--active" : "process-evidence-type"}
+                    type="button"
+                    key={type}
+                    onClick={() => setProcessEvidenceType(type)}
+                  >
+                    {type}
+                  </button>
+                ))}
+              </div>
+              <label className="process-evidence-student-select">
+                <span>评价对象</span>
+                <select value={processTargetStudentId} onChange={(event) => setProcessTargetStudentId(event.target.value)}>
+                  <option value="">全班</option>
+                  {selectedStudents.map((student) => (
+                    <option value={student.id} key={student.id}>{student.name}</option>
+                  ))}
+                </select>
+              </label>
+              <textarea
+                className="process-evidence-note"
+                value={processEvidenceNote}
+                onChange={(event) => setProcessEvidenceNote(event.target.value)}
+                placeholder="记录一句可追溯证据，例如：小明能复述 x 表示苹果单价，但需要同伴补充总价等量关系。"
+              />
+              {processEvidenceError ? <p className="transcript-error">{processEvidenceError}</p> : null}
+              <div className="transcript-actions">
+                <button
+                  className="primary-button"
+                  type="button"
+                  onClick={recordProcessEvidence}
+                  disabled={processEvidenceSaving || !processEvidenceNote.trim() || session.status === "completed"}
+                >
+                  {processEvidenceSaving ? <Loader2 className="spin" size={17} /> : <CheckCircle2 size={17} />}
+                  记录评价证据
+                </button>
+              </div>
+              <div className="process-evidence-list">
+                {recentProcessEvidence.map((event) => (
+                  <div className="process-evidence-card" key={event.id}>
+                    <strong>{String(event.metadata.evidenceType ?? "过程评价")} / {String(event.metadata.targetStudentName ?? "全班")}</strong>
+                    <span>{event.content}</span>
+                  </div>
+                ))}
+                {!recentProcessEvidence.length ? <span className="process-evidence-empty">暂无过程评价证据，记录后会进入课堂时间线和课后报告。</span> : null}
+              </div>
             </div>
           </div>
 
@@ -349,6 +738,43 @@ export function TrainingRoom({
               <div className="screen-card__title">
                 <span>即时教学建议</span>
               </div>
+              {trainingTarget ? (
+                <div className="training-target-focus">
+                  <strong>{trainingTarget.status === "completed" ? "复训结果已归档" : "本次复训"}</strong>
+                  <span>{trainingTarget.action}</span>
+                  <div className="training-target-template">
+                    <div className="training-target-template__steps">
+                      <b>复训任务清单</b>
+                      <ol>
+                        {trainingTarget.template.steps.map((step, index) => (
+                          <li key={`${trainingTarget.id}-step-${index}`}>{step}</li>
+                        ))}
+                      </ol>
+                    </div>
+                    <div className="training-target-template__criteria">
+                      <b>成功标准</b>
+                      <ul>
+                        {trainingTarget.template.successCriteria.map((criterion, index) => (
+                          <li key={`${trainingTarget.id}-criterion-${index}`}>{criterion}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="training-target-template__evidence">
+                      <b>证据提示</b>
+                      <ul>
+                        {trainingTarget.template.evidencePrompts.map((prompt, index) => (
+                          <li key={`${trainingTarget.id}-prompt-${index}`}>{prompt}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="training-target-template__metrics">
+                      {trainingTarget.template.focusMetrics.map((metric) => (
+                        <span key={metric}>{focusMetricLabel(metric)}</span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
               <p>{latestSuggestion}</p>
             </div>
 

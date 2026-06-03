@@ -5,10 +5,19 @@ import { DatabaseSync } from "node:sqlite";
 import type {
   ClassroomEvent,
   Course,
+  EvidenceBoundRecommendation,
   EvaluationReport,
+  LessonPlan,
+  LessonPlanStage,
+  ModelCallLog,
   ModelProviderConfig,
+  ProcessEvaluationDesign,
+  ReportEvidenceContext,
   StudentAgent,
   StudentRuntimeState,
+  TrainingTarget,
+  TrainingTargetTemplate,
+  TrainingTargetTemplateType,
   TrainingSession
 } from "../shared/types.js";
 import { createDeepSeekDefaultProvider, isLegacyOpenAiDefaultProvider } from "../shared/providerDefaults.js";
@@ -33,6 +42,172 @@ function json<T>(value: string | null | undefined, fallback: T): T {
     return JSON.parse(value) as T;
   } catch {
     return fallback;
+  }
+}
+
+const trainingTargetTemplateTypes: TrainingTargetTemplateType[] = [
+  "concept-check",
+  "strategy-follow-up",
+  "participation-recovery",
+  "camera-presence"
+];
+
+function isTrainingTargetTemplateType(value: unknown): value is TrainingTargetTemplateType {
+  return typeof value === "string" && trainingTargetTemplateTypes.includes(value as TrainingTargetTemplateType);
+}
+
+function stringList(value: unknown, fallback: string[]): string[] {
+  if (!Array.isArray(value)) return fallback;
+  const items = value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+  return items.length ? items : fallback;
+}
+
+function fallbackTrainingTargetTemplate(recommendationTitle: string, recommendationDetail: string, action: string): TrainingTargetTemplate {
+  return {
+    type: "concept-check",
+    title: "复训：关键概念小步确认",
+    scenario: `围绕“${recommendationTitle || "课后建议"}”进行一次短轮复训。${recommendationDetail || ""}`,
+    steps: [
+      action || "讲完一个关键步骤后停顿 3 秒，请一名学生复述设量和等量关系。",
+      "把学生复述中缺失的词补成一句完整判断，再进入下一步。",
+      "用一个封闭式小问题确认全班是否跟上。"
+    ],
+    successCriteria: [
+      "学生能复述设量、等量关系和理由，教师再进入下一步。",
+      "教师至少完成一次确认性追问。",
+      "复训结束时保留一条可回看的学生证据。"
+    ],
+    evidencePrompts: [
+      "记录一条学生复述证据，说明他是否说清关键步骤。",
+      "记录一次教师追问后的学生回应变化。"
+    ],
+    focusMetrics: ["clarity", "questioning", "confusion"]
+  };
+}
+
+function normalizeTrainingTargetTemplate(value: string | null | undefined, fallback: TrainingTargetTemplate): TrainingTargetTemplate {
+  const parsed = json<Partial<TrainingTargetTemplate>>(value, {});
+  return {
+    type: isTrainingTargetTemplateType(parsed.type) ? parsed.type : fallback.type,
+    title: typeof parsed.title === "string" && parsed.title.trim() ? parsed.title : fallback.title,
+    scenario: typeof parsed.scenario === "string" && parsed.scenario.trim() ? parsed.scenario : fallback.scenario,
+    steps: stringList(parsed.steps, fallback.steps),
+    successCriteria: stringList(parsed.successCriteria, fallback.successCriteria),
+    evidencePrompts: stringList(parsed.evidencePrompts, fallback.evidencePrompts),
+    focusMetrics: stringList(parsed.focusMetrics, fallback.focusMetrics)
+  };
+}
+
+function recommendationHasTeacherObservationEvidence(report: EvaluationReport, recommendation: EvidenceBoundRecommendation) {
+  const eventTypesById = new Map(report.evidence.map((node) => [node.eventId, node.eventType]));
+  return recommendation.evidenceEventIds.some((eventId) => eventTypesById.get(eventId) === "teacher_observation");
+}
+
+function classifyTrainingTargetTemplate(report: EvaluationReport, recommendation: EvidenceBoundRecommendation): TrainingTargetTemplateType {
+  const text = `${recommendation.title} ${recommendation.detail} ${recommendation.action}`;
+  if (/镜头|摄像头|抬头|视线|站位|正对|教师观察/.test(text) || recommendationHasTeacherObservationEvidence(report, recommendation)) {
+    return "camera-presence";
+  }
+  if (/低参与|参与|点名|补充理由|薄弱|内向/.test(text)) {
+    return "participation-recovery";
+  }
+  if (/即时建议|策略|观察点|采纳|系统调控/.test(text)) {
+    return "strategy-follow-up";
+  }
+  return "concept-check";
+}
+
+function createTrainingTargetTemplate(report: EvaluationReport, recommendation: EvidenceBoundRecommendation): TrainingTargetTemplate {
+  const type = classifyTrainingTargetTemplate(report, recommendation);
+  switch (type) {
+    case "camera-presence":
+      return {
+        type,
+        title: "复训：教师镜头交流动作",
+        scenario: `围绕“${recommendation.title}”进行一次镜头观察复训，把摄像头指标转成面向学生的课堂动作。`,
+        steps: [
+          "开始提问前先固定站位，抬头看向学生区，再说出问题。",
+          "学生回应前保持正对镜头和学生区视线，等待 3 秒后点名。",
+          "请一名学生复述关键步骤，再根据回应补充或追问。"
+        ],
+        successCriteria: [
+          "教师提问时保持正对学生区，视线不长时间离开镜头。",
+          "镜头观察摘要中的正对镜头率和稳定度不再成为主要问题。",
+          "至少出现一次学生复述关键步骤的证据。"
+        ],
+        evidencePrompts: [
+          "记录一次提问前教师是否抬头看向学生区。",
+          "记录学生复述后教师是否进行了补充或追问。"
+        ],
+        focusMetrics: [
+          "teacherObservation.frontFacingRate",
+          "teacherObservation.averageStability",
+          "questioning"
+        ]
+      };
+    case "participation-recovery":
+      return {
+        type,
+        title: "复训：低参与学生可完成任务",
+        scenario: `围绕“${recommendation.title}”进行一次参与度复训，把发言任务切成学生能完成的小步。`,
+        steps: [
+          "先点名低参与学生回答一个只需一步判断的问题。",
+          "请积极学生补充理由，但不替代低参与学生的原始表达。",
+          "把两名学生的答案合成一句完整结论，再回到全班。"
+        ],
+        successCriteria: [
+          "低参与学生至少完成一次短回应。",
+          "教师给出等待时间后再请同伴补充。",
+          "学生回应后形成一条可进入报告的过程证据。"
+        ],
+        evidencePrompts: [
+          "记录低参与学生完成了哪一个小步。",
+          "记录同伴补充是否帮助原学生修正理解。"
+        ],
+        focusMetrics: ["engagement", "interaction", "attention"]
+      };
+    case "strategy-follow-up":
+      return {
+        type,
+        title: "复训：即时策略采纳追踪",
+        scenario: `围绕“${recommendation.title}”进行一次策略采纳复训，把系统建议转成可观察动作。`,
+        steps: [
+          "选择一条即时建议，先说出将要采纳的教师动作。",
+          "执行动作后观察学生注意、提问或回应是否变化。",
+          "用一句话标记这条策略是否有效，并决定是否继续使用。"
+        ],
+        successCriteria: [
+          "教师至少明确采纳一条即时建议。",
+          "采纳后出现学生回应、提问或状态变化证据。",
+          "复训报告能追踪策略动作和学生结果之间的关系。"
+        ],
+        evidencePrompts: [
+          "记录教师采纳了哪一条即时建议。",
+          "记录采纳后的第一个学生反应。"
+        ],
+        focusMetrics: ["interaction", "engagement", "systemSuggestions"]
+      };
+    default:
+      return {
+        type,
+        title: "复训：关键概念小步确认",
+        scenario: `围绕“${recommendation.title}”进行一次关键概念复训，把讲解拆成可验证的小步。`,
+        steps: [
+          "讲完一个关键步骤后停顿 3 秒，请一名学生复述设量和等量关系。",
+          "针对学生复述中缺失的部分，用一句追问补齐理由。",
+          "再请另一名学生用生活例子确认同一个关系。"
+        ],
+        successCriteria: [
+          "学生能复述关键步骤，并说清设量和等量关系。",
+          "教师至少完成一次确认性追问后再进入下一步。",
+          "困惑学生能用生活例子重新解释核心概念。"
+        ],
+        evidencePrompts: [
+          "记录一条学生复述证据，说明他是否说清关键步骤。",
+          "记录一次追问后的学生修正或补充。"
+        ],
+        focusMetrics: ["clarity", "questioning", "confusion"]
+      };
   }
 }
 
@@ -93,6 +268,15 @@ function rowToEvent(row: Record<string, unknown>): ClassroomEvent {
 }
 
 function rowToReport(row: Record<string, unknown>): EvaluationReport {
+  const overview = json<EvaluationReport["overview"]>(String(row.overview ?? "{}"), {
+    totalEvents: 0,
+    teacherTurns: 0,
+    studentResponses: 0,
+    studentQuestions: 0,
+    systemSuggestions: 0,
+    teacherObservations: 0,
+    durationMinutes: 0
+  });
   return {
     id: String(row.id),
     sessionId: String(row.session_id),
@@ -109,7 +293,82 @@ function rowToReport(row: Record<string, unknown>): EvaluationReport {
     strengths: json<string[]>(String(row.strengths ?? "[]"), []),
     improvements: json<string[]>(String(row.improvements ?? "[]"), []),
     keyMoments: json<string[]>(String(row.key_moments ?? "[]"), []),
+    overview,
+    evidence: json<EvaluationReport["evidence"]>(String(row.evidence ?? "[]"), []),
+    keyTimeline: json<EvaluationReport["keyTimeline"]>(String(row.key_timeline ?? "[]"), []),
+    studentResponses: json<EvaluationReport["studentResponses"]>(String(row.student_responses ?? "[]"), []),
+    teacherStrategyHits: json<EvaluationReport["teacherStrategyHits"]>(String(row.teacher_strategy_hits ?? "[]"), []),
+    recommendations: json<EvaluationReport["recommendations"]>(String(row.recommendations ?? "[]"), []),
+    teacherObservation: json<EvaluationReport["teacherObservation"]>(String(row.teacher_observation ?? ""), undefined),
+    processEvaluation: json<EvaluationReport["processEvaluation"]>(String(row.process_evaluation ?? ""), undefined),
+    exportMarkdown: String(row.export_markdown ?? ""),
+    exportHtml: String(row.export_html ?? ""),
+    generatedBy: row.generated_by === "model" ? "model" : "local",
+    fallbackReason: row.fallback_reason ? String(row.fallback_reason) : undefined,
     generatedAt: String(row.generated_at)
+  };
+}
+
+const defaultTeachingMethods: Record<LessonPlanStage["type"], string> = {
+  导入: "情境导入法",
+  讲解: "支架式讲解",
+  提问: "问题链教学",
+  练习: "即时诊断与变式练习",
+  总结: "归纳建构法"
+};
+
+const defaultStageEvaluationPoints: Record<LessonPlanStage["type"], string> = {
+  导入: "观察学生能否说出情境中的关键条件。",
+  讲解: "检查学生能否复述关键步骤和依据。",
+  提问: "记录学生追问、补充和同伴回应。",
+  练习: "收集学生迁移应用和同伴反馈证据。",
+  总结: "用学生自评或出口条确认最终理解。"
+};
+
+function normalizeLessonStages(stages: LessonPlan["stages"]): LessonPlan["stages"] {
+  return stages.map((stage) => ({
+    ...stage,
+    teachingMethod: stage.teachingMethod || defaultTeachingMethods[stage.type] || "互动讲解法",
+    actionScript: stage.actionScript || stage.teacherAction,
+    processEvaluationPoint: stage.processEvaluationPoint || defaultStageEvaluationPoints[stage.type] || "记录学生过程表现和同伴反馈。"
+  }));
+}
+
+function rowProcessEvaluation(row: Record<string, unknown>): ProcessEvaluationDesign | undefined {
+  const parsed = json<ProcessEvaluationDesign | undefined>(String(row.process_evaluation ?? ""), undefined);
+  if (!parsed?.focus && !parsed?.method && !parsed?.peerReviewPrompt && !parsed?.evidenceTypes?.length) {
+    return undefined;
+  }
+  return {
+    focus: parsed.focus || "学生能否说清关键依据和思考过程",
+    method: parsed.method || "教师观察 + 学生自评 + 同伴互评",
+    peerReviewPrompt: parsed.peerReviewPrompt || "请同伴指出依据是否清楚，并给出一个改进建议。",
+    evidenceTypes: Array.isArray(parsed.evidenceTypes) && parsed.evidenceTypes.length
+      ? parsed.evidenceTypes
+      : ["学生复述", "追问回应", "同伴反馈"]
+  };
+}
+
+function rowToLessonPlan(row: Record<string, unknown>): LessonPlan {
+  return {
+    id: String(row.id),
+    courseId: String(row.course_id),
+    title: String(row.title),
+    overview: String(row.overview),
+    objectives: json<string[]>(String(row.objectives ?? "[]"), []),
+    stages: normalizeLessonStages(json<LessonPlan["stages"]>(String(row.stages ?? "[]"), [])),
+    incidents: json<LessonPlan["incidents"]>(String(row.incidents ?? "[]"), []),
+    recommendedStudentIds: json<string[]>(String(row.recommended_student_ids ?? "[]"), []),
+    processEvaluation: rowProcessEvaluation(row),
+    generatedBy: row.generated_by === "model" ? "model" : "local",
+    planningMode: row.planning_mode === "textbook" ? "textbook" : "free-topic",
+    textbookVersion: row.textbook_version ? String(row.textbook_version) : undefined,
+    volume: row.volume ? String(row.volume) : undefined,
+    unit: row.unit ? String(row.unit) : undefined,
+    lesson: row.lesson ? String(row.lesson) : undefined,
+    period: row.period ? String(row.period) : undefined,
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at)
   };
 }
 
@@ -129,6 +388,29 @@ function rowToRuntimeState(row: Record<string, unknown>): StudentRuntimeState {
   };
 }
 
+function rowToTrainingTarget(row: Record<string, unknown>): TrainingTarget {
+  const recommendationTitle = String(row.recommendation_title);
+  const recommendationDetail = String(row.recommendation_detail);
+  const action = String(row.action);
+  return {
+    id: String(row.id),
+    reportId: String(row.report_id),
+    sessionId: String(row.session_id),
+    sourceSessionId: String(row.source_session_id),
+    courseId: String(row.course_id),
+    recommendationTitle,
+    recommendationDetail,
+    action,
+    evidenceEventIds: json<string[]>(String(row.evidence_event_ids ?? "[]"), []),
+    template: normalizeTrainingTargetTemplate(
+      row.template ? String(row.template) : undefined,
+      fallbackTrainingTargetTemplate(recommendationTitle, recommendationDetail, action)
+    ),
+    status: row.status === "completed" ? "completed" : "active",
+    createdAt: String(row.created_at)
+  };
+}
+
 function rowToProvider(row: Record<string, unknown>): ModelProviderConfig {
   return {
     id: String(row.id),
@@ -142,9 +424,26 @@ function rowToProvider(row: Record<string, unknown>): ModelProviderConfig {
   };
 }
 
+function rowToModelCallLog(row: Record<string, unknown>): ModelCallLog {
+  return {
+    id: String(row.id),
+    scenario: row.scenario as ModelCallLog["scenario"],
+    provider: String(row.provider),
+    model: String(row.model),
+    baseURL: String(row.base_url),
+    status: row.status as ModelCallLog["status"],
+    usedModel: Boolean(row.used_model),
+    fallbackReason: String(row.fallback_reason ?? ""),
+    durationMs: Number(row.duration_ms ?? 0),
+    metadata: json<Record<string, unknown>>(String(row.metadata ?? "{}"), {}),
+    createdAt: String(row.created_at)
+  };
+}
+
 export function initDb() {
   runMigrations(db);
   seedDefaults();
+  pruneOrphanRuntimeStates();
 }
 
 function seedDefaults() {
@@ -308,6 +607,13 @@ function seedDefaults() {
   }
 }
 
+function pruneOrphanRuntimeStates() {
+  db.prepare(`
+    DELETE FROM student_runtime_states
+    WHERE session_id NOT IN (SELECT id FROM sessions)
+  `).run();
+}
+
 export const store = {
   listCourses(): Course[] {
     return (db.prepare("SELECT * FROM courses ORDER BY created_at DESC").all() as Record<string, unknown>[]).map(rowToCourse);
@@ -330,6 +636,7 @@ export const store = {
     return course;
   },
   deleteCourse(id: string): boolean {
+    db.prepare("DELETE FROM lesson_plans WHERE course_id = ?").run(id);
     const result = db.prepare("DELETE FROM courses WHERE id = ?").run(id);
     return result.changes > 0;
   },
@@ -402,6 +709,8 @@ export const store = {
     return session;
   },
   deleteSession(id: string): boolean {
+    db.prepare("DELETE FROM training_targets WHERE session_id = ? OR source_session_id = ?").run(id, id);
+    db.prepare("DELETE FROM student_runtime_states WHERE session_id = ?").run(id);
     db.prepare("DELETE FROM events WHERE session_id = ?").run(id);
     db.prepare("DELETE FROM reports WHERE session_id = ?").run(id);
     const result = db.prepare("DELETE FROM sessions WHERE id = ?").run(id);
@@ -410,6 +719,9 @@ export const store = {
   updateSessionStatus(id: string, status: TrainingSession["status"]): TrainingSession | undefined {
     const timestampField = status === "active" ? "started_at" : status === "completed" ? "ended_at" : "created_at";
     db.prepare(`UPDATE sessions SET status = ?, ${timestampField} = COALESCE(${timestampField}, ?) WHERE id = ?`).run(status, now(), id);
+    if (status === "completed") {
+      db.prepare("UPDATE training_targets SET status = 'completed' WHERE session_id = ?").run(id);
+    }
     return this.getSession(id);
   },
   addEvent(event: Omit<ClassroomEvent, "id" | "timestamp"> & { id?: string; timestamp?: string }): ClassroomEvent {
@@ -485,20 +797,230 @@ export const store = {
   listReports(): EvaluationReport[] {
     return (db.prepare("SELECT * FROM reports ORDER BY generated_at DESC").all() as Record<string, unknown>[]).map(rowToReport);
   },
+  getReportById(id: string): EvaluationReport | undefined {
+    const row = db.prepare("SELECT * FROM reports WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+    return row ? rowToReport(row) : undefined;
+  },
+  getReportEvidenceContext(reportId: string, evidenceId: string, radius = 2): ReportEvidenceContext | undefined {
+    const report = this.getReportById(reportId);
+    if (!report) return undefined;
+    const evidence = report.evidence.find((node) => node.id === evidenceId || node.eventId === evidenceId);
+    if (!evidence) return undefined;
+
+    const events = this
+      .listEvents(report.sessionId)
+      .filter((event) => event.type !== "report_evidence");
+    const targetIndex = events.findIndex((event) => event.id === evidence.eventId);
+    if (targetIndex < 0) return undefined;
+
+    const safeRadius = Number.isFinite(radius) ? Math.max(0, Math.min(8, Math.round(radius))) : 2;
+    const before = events.slice(Math.max(0, targetIndex - safeRadius), targetIndex);
+    const target = events[targetIndex];
+    const after = events.slice(targetIndex + 1, targetIndex + 1 + safeRadius);
+
+    return {
+      reportId: report.id,
+      sessionId: report.sessionId,
+      evidence,
+      target,
+      before,
+      after,
+      events: [...before, target, ...after]
+    };
+  },
+  getTrainingTargetBySession(sessionId: string): TrainingTarget | undefined {
+    const row = db.prepare("SELECT * FROM training_targets WHERE session_id = ?").get(sessionId) as Record<string, unknown> | undefined;
+    return row ? rowToTrainingTarget(row) : undefined;
+  },
+  createTrainingTargetFromRecommendation(reportId: string, recommendationTitle: string): { session: TrainingSession; target: TrainingTarget } | undefined {
+    const report = this.getReportById(reportId);
+    if (!report) return undefined;
+    const recommendation = report.recommendations.find((item) => item.title === recommendationTitle) ?? report.recommendations[0];
+    if (!recommendation) return undefined;
+    const sourceSession = this.getSession(report.sessionId);
+    if (!sourceSession) return undefined;
+    const course = this.listCourses().find((item) => item.id === sourceSession.courseId) ?? {
+      id: sourceSession.courseId,
+      title: sourceSession.courseTitle,
+      subject: "历史实训",
+      grade: "未设置",
+      objectives: report.summary,
+      topic: sourceSession.topic,
+      durationMinutes: Math.max(8, report.overview.durationMinutes || 10),
+      createdAt: sourceSession.createdAt
+    };
+
+    const session = this.createSession(course, sourceSession.selectedStudentIds);
+    const template = createTrainingTargetTemplate(report, recommendation);
+    const target: TrainingTarget = {
+      id: randomUUID(),
+      reportId: report.id,
+      sessionId: session.id,
+      sourceSessionId: sourceSession.id,
+      courseId: course.id,
+      recommendationTitle: recommendation.title,
+      recommendationDetail: recommendation.detail,
+      action: recommendation.action,
+      evidenceEventIds: recommendation.evidenceEventIds,
+      template,
+      status: "active",
+      createdAt: now()
+    };
+    db.prepare(`
+      INSERT INTO training_targets (
+        id, report_id, session_id, source_session_id, course_id,
+        recommendation_title, recommendation_detail, action, evidence_event_ids,
+        template, status, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      target.id,
+      target.reportId,
+      target.sessionId,
+      target.sourceSessionId,
+      target.courseId,
+      target.recommendationTitle,
+      target.recommendationDetail,
+      target.action,
+      JSON.stringify(target.evidenceEventIds),
+      JSON.stringify(target.template),
+      target.status,
+      target.createdAt
+    );
+    return { session, target };
+  },
+  deleteReport(id: string): boolean {
+    const row = db.prepare("SELECT * FROM reports WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+    if (!row) return false;
+    const sessionId = String(row.session_id);
+    db.prepare("DELETE FROM training_targets WHERE report_id = ?").run(id);
+    db.prepare("DELETE FROM events WHERE session_id = ? AND type = 'report_evidence'").run(sessionId);
+    const result = db.prepare("DELETE FROM reports WHERE id = ?").run(id);
+    return result.changes > 0;
+  },
+  listLessonPlans(): LessonPlan[] {
+    return (db.prepare("SELECT * FROM lesson_plans ORDER BY updated_at DESC").all() as Record<string, unknown>[]).map(rowToLessonPlan);
+  },
+  getLessonPlan(courseId: string): LessonPlan | undefined {
+    const row = db.prepare("SELECT * FROM lesson_plans WHERE course_id = ?").get(courseId) as Record<string, unknown> | undefined;
+    return row ? rowToLessonPlan(row) : undefined;
+  },
+  saveLessonPlan(input: Omit<LessonPlan, "id" | "createdAt" | "updatedAt"> & { id?: string }): LessonPlan {
+    const existing = this.getLessonPlan(input.courseId);
+    const timestamp = now();
+    const lessonPlan: LessonPlan = {
+      ...input,
+      id: input.id ?? existing?.id ?? randomUUID(),
+      createdAt: existing?.createdAt ?? timestamp,
+      updatedAt: timestamp
+    };
+    db.prepare(`
+      INSERT INTO lesson_plans (
+        id, course_id, title, overview, objectives, stages, incidents,
+        recommended_student_ids, process_evaluation, generated_by, planning_mode, textbook_version, volume,
+        unit, lesson, period, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(course_id) DO UPDATE SET
+        title = excluded.title,
+        overview = excluded.overview,
+        objectives = excluded.objectives,
+        stages = excluded.stages,
+        incidents = excluded.incidents,
+        recommended_student_ids = excluded.recommended_student_ids,
+        process_evaluation = excluded.process_evaluation,
+        generated_by = excluded.generated_by,
+        planning_mode = excluded.planning_mode,
+        textbook_version = excluded.textbook_version,
+        volume = excluded.volume,
+        unit = excluded.unit,
+        lesson = excluded.lesson,
+        period = excluded.period,
+        updated_at = excluded.updated_at
+    `).run(
+      lessonPlan.id,
+      lessonPlan.courseId,
+      lessonPlan.title,
+      lessonPlan.overview,
+      JSON.stringify(lessonPlan.objectives),
+      JSON.stringify(lessonPlan.stages),
+      JSON.stringify(lessonPlan.incidents),
+      JSON.stringify(lessonPlan.recommendedStudentIds),
+      JSON.stringify(lessonPlan.processEvaluation ?? null),
+      lessonPlan.generatedBy,
+      lessonPlan.planningMode,
+      lessonPlan.textbookVersion ?? null,
+      lessonPlan.volume ?? null,
+      lessonPlan.unit ?? null,
+      lessonPlan.lesson ?? null,
+      lessonPlan.period ?? null,
+      lessonPlan.createdAt,
+      lessonPlan.updatedAt
+    );
+    return lessonPlan;
+  },
+  addModelCallLog(log: Omit<ModelCallLog, "id" | "createdAt"> & { id?: string; createdAt?: string }): ModelCallLog {
+    const record: ModelCallLog = {
+      ...log,
+      id: log.id ?? randomUUID(),
+      createdAt: log.createdAt ?? now()
+    };
+    db.prepare(`
+      INSERT INTO model_call_logs (
+        id, scenario, provider, model, base_url, status, used_model,
+        fallback_reason, duration_ms, metadata, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      record.id,
+      record.scenario,
+      record.provider,
+      record.model,
+      record.baseURL,
+      record.status,
+      record.usedModel ? 1 : 0,
+      record.fallbackReason,
+      record.durationMs,
+      JSON.stringify(record.metadata ?? {}),
+      record.createdAt
+    );
+    return record;
+  },
+  listModelCallLogs(limit = 50): ModelCallLog[] {
+    const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(200, Math.round(limit))) : 50;
+    return (
+      db.prepare("SELECT * FROM model_call_logs ORDER BY created_at DESC LIMIT ?").all(safeLimit) as Record<string, unknown>[]
+    ).map(rowToModelCallLog);
+  },
   getReport(sessionId: string): EvaluationReport | undefined {
     const row = db.prepare("SELECT * FROM reports WHERE session_id = ?").get(sessionId) as Record<string, unknown> | undefined;
     return row ? rowToReport(row) : undefined;
   },
   saveReport(report: EvaluationReport): EvaluationReport {
+    db.prepare("DELETE FROM events WHERE session_id = ? AND type = 'report_evidence'").run(report.sessionId);
     db.prepare(`
-      INSERT INTO reports (id, session_id, summary, metrics, strengths, improvements, key_moments, generated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO reports (
+        id, session_id, summary, metrics, strengths, improvements, key_moments,
+        overview, evidence, key_timeline, student_responses, teacher_strategy_hits,
+        recommendations, teacher_observation, process_evaluation, export_markdown, export_html, generated_by, fallback_reason, generated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(session_id) DO UPDATE SET
+        id = excluded.id,
         summary = excluded.summary,
         metrics = excluded.metrics,
         strengths = excluded.strengths,
         improvements = excluded.improvements,
         key_moments = excluded.key_moments,
+        overview = excluded.overview,
+        evidence = excluded.evidence,
+        key_timeline = excluded.key_timeline,
+        student_responses = excluded.student_responses,
+        teacher_strategy_hits = excluded.teacher_strategy_hits,
+        recommendations = excluded.recommendations,
+        teacher_observation = excluded.teacher_observation,
+        process_evaluation = excluded.process_evaluation,
+        export_markdown = excluded.export_markdown,
+        export_html = excluded.export_html,
+        generated_by = excluded.generated_by,
+        fallback_reason = excluded.fallback_reason,
         generated_at = excluded.generated_at
     `).run(
       report.id,
@@ -508,6 +1030,18 @@ export const store = {
       JSON.stringify(report.strengths),
       JSON.stringify(report.improvements),
       JSON.stringify(report.keyMoments),
+      JSON.stringify(report.overview),
+      JSON.stringify(report.evidence),
+      JSON.stringify(report.keyTimeline),
+      JSON.stringify(report.studentResponses),
+      JSON.stringify(report.teacherStrategyHits),
+      JSON.stringify(report.recommendations),
+      JSON.stringify(report.teacherObservation ?? null),
+      JSON.stringify(report.processEvaluation ?? null),
+      report.exportMarkdown,
+      report.exportHtml,
+      report.generatedBy,
+      report.fallbackReason ?? "",
       report.generatedAt
     );
     return report;

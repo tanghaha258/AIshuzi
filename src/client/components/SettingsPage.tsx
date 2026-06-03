@@ -1,7 +1,7 @@
 import { BrainCircuit, Database, FileSearch, Loader2, PlugZap, RotateCcw, Save, Wifi } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api";
-import type { DashboardData, ModelProviderConfig } from "../../shared/types";
+import type { DashboardData, ModelCallLog, ModelProviderConfig } from "../../shared/types";
 import { createDeepSeekDefaultProvider, deepSeekRecommendedModels } from "../../shared/providerDefaults";
 
 interface SettingsPageProps {
@@ -15,10 +15,20 @@ export function SettingsPage({ data }: SettingsPageProps) {
   const [scenarioTesting, setScenarioTesting] = useState<"student-turn" | "lesson-plan" | "report" | "">("");
   const [testMessage, setTestMessage] = useState("");
   const [scenarioMessage, setScenarioMessage] = useState("");
+  const [modelCalls, setModelCalls] = useState<ModelCallLog[]>([]);
 
   useEffect(() => {
     api.getModelProvider().then(setConfig).catch(() => undefined);
+    api.listModelCalls(12).then(setModelCalls).catch(() => undefined);
   }, []);
+
+  async function refreshModelCalls() {
+    try {
+      setModelCalls(await api.listModelCalls(12));
+    } catch {
+      setModelCalls([]);
+    }
+  }
 
   async function saveConfig() {
     if (!config) return;
@@ -35,6 +45,7 @@ export function SettingsPage({ data }: SettingsPageProps) {
     try {
       const result = await api.testModelProvider(config);
       setTestMessage(result.message);
+      await refreshModelCalls();
     } finally {
       setTesting(false);
     }
@@ -48,9 +59,29 @@ export function SettingsPage({ data }: SettingsPageProps) {
       const result = await api.testModelScenario(config, scenario);
       const sample = result.sample ? `\n${JSON.stringify(result.sample, null, 2)}` : "";
       setScenarioMessage(`${result.message}${sample}`);
+      await refreshModelCalls();
     } finally {
       setScenarioTesting("");
     }
+  }
+
+  function modelCallLabel(scenario: ModelCallLog["scenario"]) {
+    switch (scenario) {
+      case "student-turn":
+        return "AI学生";
+      case "lesson-plan":
+        return "备课";
+      case "report":
+        return "报告";
+      default:
+        return "连接测试";
+    }
+  }
+
+  function modelCallStatusLabel(call: ModelCallLog) {
+    if (call.status === "success" && call.usedModel) return "真实调用";
+    if (call.status === "fallback") return "本地降级";
+    return "调用失败";
   }
 
   function fillDeepSeekDefaults() {
@@ -157,6 +188,35 @@ export function SettingsPage({ data }: SettingsPageProps) {
           </>
         ) : (
           <div className="empty-state">正在读取模型配置...</div>
+        )}
+      </section>
+
+      <section className="panel">
+        <div className="panel-title">
+          <div>
+            <span className="eyebrow">Model Calls</span>
+            <h2>最近模型调用</h2>
+          </div>
+          <Wifi size={24} />
+        </div>
+        {modelCalls.length ? (
+          <div className="model-call-log-list">
+            {modelCalls.map((call) => (
+              <article className="model-call-log" key={call.id}>
+                <div>
+                  <strong>{modelCallLabel(call.scenario)}</strong>
+                  <span>{call.provider} / {call.model || "未指定模型"}</span>
+                </div>
+                <span className={`model-call-status model-call-status--${call.status}`}>
+                  {modelCallStatusLabel(call)}
+                </span>
+                <small>{call.durationMs}ms · {new Date(call.createdAt).toLocaleString("zh-CN")}</small>
+                {call.fallbackReason ? <p>{call.fallbackReason}</p> : null}
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="model-call-empty">暂无模型调用记录。保存配置后可先运行连接测试或场景测试。</div>
         )}
       </section>
 

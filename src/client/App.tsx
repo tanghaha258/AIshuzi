@@ -16,12 +16,14 @@ import { SettingsPage } from "./components/SettingsPage";
 import { StudentsPage } from "./components/StudentsPage";
 import { TrainingRoom } from "./components/TrainingRoom";
 import { api } from "./api";
+import { findReusableSession } from "../shared/sessionLifecycle";
 import type {
   ClassroomEvent,
   DashboardData,
   EvaluationReport,
   StudentAgent,
   StudentRuntimeState,
+  TrainingTarget,
   TrainingSession
 } from "../shared/types";
 
@@ -31,7 +33,8 @@ const emptyData: DashboardData = {
   courses: [],
   students: [],
   sessions: [],
-  reports: []
+  reports: [],
+  lessonPlans: []
 };
 
 function viewFromHash(): View {
@@ -66,6 +69,7 @@ export default function App() {
   const [activeSession, setActiveSession] = useState<TrainingSession | null>(null);
   const [activeEvents, setActiveEvents] = useState<ClassroomEvent[]>([]);
   const [activeRuntimeStates, setActiveRuntimeStates] = useState<StudentRuntimeState[]>([]);
+  const [activeTrainingTarget, setActiveTrainingTarget] = useState<TrainingTarget | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -108,13 +112,45 @@ export default function App() {
     setActiveSession(result.session);
     setActiveEvents(result.events);
     setActiveRuntimeStates(result.runtimeStates);
+    setActiveTrainingTarget(result.trainingTarget ?? null);
     navigate("training");
   }
 
-  async function createSession(courseId: string, studentIds: string[]) {
+  async function createSession(courseId: string, studentIds: string[], options: { forceNew?: boolean } = {}) {
+    if (!options.forceNew) {
+      const reusableSession = findReusableSession(data.sessions, courseId);
+      if (reusableSession) {
+        await openSession(reusableSession.id);
+        return;
+      }
+    }
     const session = await api.createSession(courseId, studentIds);
     await refresh();
     await openSession(session.id);
+  }
+
+  async function deleteSession(sessionId: string) {
+    await api.deleteSession(sessionId);
+    const next = await refresh();
+    if (activeSession?.id === sessionId) {
+      setActiveSession(null);
+      setActiveEvents([]);
+      setActiveRuntimeStates([]);
+      setActiveTrainingTarget(null);
+      if (view === "training") {
+        const fallbackSession = next.sessions.find((session) => session.status !== "completed") ?? next.sessions[0];
+        if (fallbackSession) {
+          await openSession(fallbackSession.id);
+        } else {
+          navigate("dashboard");
+        }
+      }
+    }
+  }
+
+  async function deleteCourse(courseId: string) {
+    await api.deleteCourse(courseId);
+    await refresh();
   }
 
   function handleSessionChange(session: TrainingSession) {
@@ -131,6 +167,21 @@ export default function App() {
       reports: [report, ...current.reports.filter((item) => item.id !== report.id)]
     }));
     navigate("reports");
+  }
+
+  function handleTrainingTargetChange(target: TrainingTarget) {
+    setActiveTrainingTarget(target);
+  }
+
+  async function deleteReport(reportId: string) {
+    await api.deleteReport(reportId);
+    await refresh();
+  }
+
+  async function createTrainingTarget(reportId: string, recommendationTitle: string) {
+    const result = await api.createTrainingTarget(reportId, recommendationTitle);
+    await refresh();
+    await openSession(result.session.id);
   }
 
   function handleCourseCreated(course: DashboardData["courses"][number]) {
@@ -199,13 +250,21 @@ export default function App() {
 
       <div className="content-shell">
         {view === "dashboard" ? (
-          <Dashboard data={data} onCreateSession={createSession} onOpenSession={openSession} onNavigate={navigate} />
+          <Dashboard
+            data={data}
+            onCreateSession={createSession}
+            onDeleteCourse={deleteCourse}
+            onDeleteSession={deleteSession}
+            onOpenSession={openSession}
+            onNavigate={navigate}
+          />
         ) : null}
         {view === "planner" ? (
           <CoursePlannerPage
             courses={data.courses}
             students={data.students}
             onCourseCreated={handleCourseCreated}
+            onDeleteCourse={deleteCourse}
             onCreateSession={createSession}
           />
         ) : null}
@@ -215,7 +274,9 @@ export default function App() {
             students={selectedStudents}
             initialEvents={activeEvents}
             initialRuntimeStates={activeRuntimeStates}
+            trainingTarget={activeTrainingTarget ?? undefined}
             onSessionChange={handleSessionChange}
+            onTrainingTargetChange={handleTrainingTargetChange}
             onReport={handleReport}
           />
         ) : null}
@@ -225,7 +286,14 @@ export default function App() {
           </main>
         ) : null}
         {view === "students" ? <StudentsPage students={data.students} onSaved={handleStudentSaved} /> : null}
-        {view === "reports" ? <ReportsPage reports={data.reports} sessions={data.sessions} /> : null}
+        {view === "reports" ? (
+          <ReportsPage
+            reports={data.reports}
+            sessions={data.sessions}
+            onDeleteReport={deleteReport}
+            onCreateTrainingTarget={createTrainingTarget}
+          />
+        ) : null}
         {view === "settings" ? <SettingsPage data={data} /> : null}
       </div>
     </div>

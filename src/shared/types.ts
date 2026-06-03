@@ -10,6 +10,7 @@ export type EventType =
   | "teacher_observation"
   | "system_suggestion"
   | "classroom_metric"
+  | "process_evaluation"
   | "report_evidence";
 
 export interface ModelProviderConfig {
@@ -71,6 +72,98 @@ export interface Course {
   createdAt: string;
 }
 
+export type LessonPlanStageType = "导入" | "讲解" | "提问" | "练习" | "总结";
+
+export type PlannedIncidentType = "听不懂" | "抢答" | "质疑" | "沉默" | "跑题";
+
+export type PlanningMode = "free-topic" | "textbook";
+
+export interface ProcessEvaluationDesign {
+  focus: string;
+  method: string;
+  peerReviewPrompt: string;
+  evidenceTypes: string[];
+}
+
+export type ProcessEvidenceType =
+  | "学生复述"
+  | "追问回应"
+  | "学生自评"
+  | "同伴互评"
+  | "教师观察";
+
+export interface RecordProcessEvidencePayload {
+  evidenceType: ProcessEvidenceType;
+  targetStudentId?: string;
+  note: string;
+}
+
+export interface RecordProcessEvidenceResult {
+  event: ClassroomEvent;
+}
+
+export interface LessonPlanStage {
+  id: string;
+  type: LessonPlanStageType;
+  name: string;
+  minutes: number;
+  teachingMethod: string;
+  teacherAction: string;
+  actionScript: string;
+  expectedStudentResponse: string;
+  strategyTip: string;
+  processEvaluationPoint: string;
+}
+
+export interface PlannedClassroomIncident {
+  id: string;
+  type: PlannedIncidentType;
+  trigger: string;
+  studentRole: string;
+  teacherStrategy: string;
+}
+
+export interface LessonPlan {
+  id: string;
+  courseId: string;
+  title: string;
+  overview: string;
+  objectives: string[];
+  stages: LessonPlanStage[];
+  incidents: PlannedClassroomIncident[];
+  recommendedStudentIds: string[];
+  processEvaluation?: ProcessEvaluationDesign;
+  generatedBy: "model" | "local";
+  planningMode: PlanningMode;
+  textbookVersion?: string;
+  volume?: string;
+  unit?: string;
+  lesson?: string;
+  period?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type LessonPlanDraft = Omit<LessonPlan, "id" | "courseId" | "createdAt" | "updatedAt">;
+
+export type ModelCallScenario = "student-turn" | "lesson-plan" | "report" | "provider-test";
+
+export type ModelCallStatus = "success" | "fallback" | "error";
+
+export interface ModelCallLog {
+  id: string;
+  scenario: ModelCallScenario;
+  provider: string;
+  model: string;
+  baseURL: string;
+  status: ModelCallStatus;
+  usedModel: boolean;
+  fallbackReason: string;
+  durationMs: number;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+}
+
 export interface TrainingSession {
   id: string;
   courseId: string;
@@ -83,6 +176,39 @@ export interface TrainingSession {
   createdAt: string;
 }
 
+export type TrainingTargetStatus = "active" | "completed";
+
+export type TrainingTargetTemplateType =
+  | "concept-check"
+  | "strategy-follow-up"
+  | "participation-recovery"
+  | "camera-presence";
+
+export interface TrainingTargetTemplate {
+  type: TrainingTargetTemplateType;
+  title: string;
+  scenario: string;
+  steps: string[];
+  successCriteria: string[];
+  evidencePrompts: string[];
+  focusMetrics: string[];
+}
+
+export interface TrainingTarget {
+  id: string;
+  reportId: string;
+  sessionId: string;
+  sourceSessionId: string;
+  courseId: string;
+  recommendationTitle: string;
+  recommendationDetail: string;
+  action: string;
+  evidenceEventIds: string[];
+  template: TrainingTargetTemplate;
+  status: TrainingTargetStatus;
+  createdAt: string;
+}
+
 export interface ClassroomEvent {
   id: string;
   sessionId: string;
@@ -91,6 +217,49 @@ export interface ClassroomEvent {
   content: string;
   timestamp: string;
   metadata: Record<string, unknown>;
+}
+
+export type TranscriptSource = "web-speech" | "manual" | "local-asr";
+
+export interface TranscriptSegment {
+  id?: string;
+  sessionId: string;
+  text: string;
+  isFinal: boolean;
+  source: TranscriptSource;
+  confidence: number;
+  startOffsetMs: number;
+  endOffsetMs: number;
+  language: string;
+  createdAt?: string;
+}
+
+export interface TranscriptTurnPayload {
+  segments: TranscriptSegment[];
+  sendAsTurn?: boolean;
+}
+
+export type TeacherObservationSource = "mediapipe" | "fallback";
+
+export type TeacherObservationHeadDirection =
+  | "front"
+  | "left"
+  | "right"
+  | "up"
+  | "down"
+  | "unknown";
+
+export interface TeacherObservationPayload {
+  source: TeacherObservationSource;
+  faceVisible: boolean;
+  /** 0-100 */
+  faceConfidence: number;
+  headDirection: TeacherObservationHeadDirection;
+  /** 0-100 */
+  expressionActivity: number;
+  /** 0-100 */
+  stability: number;
+  capturedAt: string;
 }
 
 export interface ClassroomMetrics {
@@ -111,7 +280,103 @@ export interface EvaluationReport {
   strengths: string[];
   improvements: string[];
   keyMoments: string[];
+  overview: ReportOverview;
+  evidence: ReportEvidenceNode[];
+  keyTimeline: ReportTimelineItem[];
+  studentResponses: StudentResponseSummary[];
+  teacherStrategyHits: TeacherStrategyHit[];
+  recommendations: EvidenceBoundRecommendation[];
+  teacherObservation?: ReportTeacherObservation;
+  processEvaluation?: ReportProcessEvaluation;
+  exportMarkdown: string;
+  exportHtml: string;
+  generatedBy: "model" | "local";
+  fallbackReason?: string;
   generatedAt: string;
+}
+
+export interface ReportOverview {
+  totalEvents: number;
+  teacherTurns: number;
+  studentResponses: number;
+  studentQuestions: number;
+  systemSuggestions: number;
+  teacherObservations: number;
+  durationMinutes: number;
+}
+
+export interface ReportEvidenceNode {
+  id: string;
+  eventId: string;
+  timestamp: string;
+  eventType: EventType;
+  actor: string;
+  quote: string;
+  reason: string;
+  weight: number;
+}
+
+export interface ReportEvidenceContext {
+  reportId: string;
+  sessionId: string;
+  evidence: ReportEvidenceNode;
+  target: ClassroomEvent;
+  before: ClassroomEvent[];
+  after: ClassroomEvent[];
+  events: ClassroomEvent[];
+}
+
+export interface ReportTimelineItem {
+  time: string;
+  title: string;
+  description: string;
+  evidenceEventId: string;
+  eventType: EventType;
+}
+
+export interface StudentResponseSummary {
+  studentId?: string;
+  studentName: string;
+  profile: string;
+  responseCount: number;
+  questionCount: number;
+  confusionSignals: number;
+  engagementSignals: number;
+  evidenceEventIds: string[];
+  diagnosis: string;
+}
+
+export interface TeacherStrategyHit {
+  strategy: string;
+  matched: boolean;
+  evidenceEventIds: string[];
+  diagnosis: string;
+}
+
+export interface EvidenceBoundRecommendation {
+  title: string;
+  detail: string;
+  priority: "high" | "medium" | "low";
+  action: string;
+  evidenceEventIds: string[];
+}
+
+export interface ReportTeacherObservation {
+  sampleCount: number;
+  faceVisibleRate: number;
+  averageConfidence: number;
+  frontFacingRate: number;
+  averageStability: number;
+  issueCount: number;
+  issueLabels: string[];
+  evidenceEventIds: string[];
+  summary: string;
+}
+
+export interface ReportProcessEvaluation extends ProcessEvaluationDesign {
+  stagePoints: string[];
+  evidenceEventIds: string[];
+  summary: string;
 }
 
 export interface DashboardData {
@@ -119,6 +384,7 @@ export interface DashboardData {
   students: StudentAgent[];
   sessions: TrainingSession[];
   reports: EvaluationReport[];
+  lessonPlans: LessonPlan[];
 }
 
 export interface SimulationTurn {
@@ -140,6 +406,22 @@ export interface CreateCoursePayload {
   objectives: string;
   topic: string;
   durationMinutes: number;
+}
+
+export interface GenerateLessonPlanPayload {
+  title?: string;
+  planningMode?: PlanningMode;
+  textbookVersion?: string;
+  volume?: string;
+  unit?: string;
+  lesson?: string;
+  period?: string;
+  subject: string;
+  grade: string;
+  topic: string;
+  objectives: string;
+  durationMinutes: number;
+  processEvaluation?: ProcessEvaluationDesign;
 }
 
 export interface UpsertModelProviderPayload {

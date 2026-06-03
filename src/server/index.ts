@@ -5,15 +5,33 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { initDb, store } from "./db.js";
 import { callChatCompletion, callJsonCompletion, generateAiStudentTurn, streamChatCompletion, validateProviderConfig } from "./ai/provider.js";
+import { createModelCallLog, sanitizeModelCallLog } from "./ai/observability.js";
 import { buildProviderScenarioPrompt, type ProviderScenario } from "./ai/prompts.js";
-import { buildTurnEvents, calculateMetrics, createReport } from "./domain/simulation.js";
+import { buildTurnEvents, calculateMetrics } from "./domain/simulation.js";
 import {
   advanceRuntimeTick,
   applyStudentMessagesToRuntime,
   buildRuntimeStateEvents,
   selectStudentsForTurn
 } from "./services/studentState.js";
-import type { CreateCoursePayload, CreateSessionPayload, UpsertModelProviderPayload } from "../shared/types.js";
+import { generateLessonPlan } from "./services/lessonPlanner.js";
+import {
+  createTranscriptEvent,
+  mergeTranscriptSegments,
+  normalizeTranscriptSegment
+} from "./services/transcriptService.js";
+import { buildTeacherObservationEvents } from "./services/observationService.js";
+import { buildProcessEvaluationEvent } from "./services/processEvaluationService.js";
+import { createReportEvidenceEvents, generateEvaluationReport } from "./services/reportGenerator.js";
+import type {
+  CreateCoursePayload,
+  CreateSessionPayload,
+  GenerateLessonPlanPayload,
+  RecordProcessEvidencePayload,
+  TrainingSession,
+  TranscriptTurnPayload,
+  UpsertModelProviderPayload
+} from "../shared/types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -37,7 +55,81 @@ function providerConfigFromBody(body: Partial<UpsertModelProviderPayload>, curre
     apiKey: rawApiKey === "********" ? current.apiKey : rawApiKey,
     model: requireString(body.model, current.model),
     temperature: Number(body.temperature ?? current.temperature),
-    enabled: Boolean(body.enabled)
+    enabled: typeof body.enabled === "boolean" ? body.enabled : current.enabled
+  };
+}
+
+async function runTeacherTurn(
+  session: TrainingSession,
+  teacherText: string,
+  inputMode: "manual" | "speech",
+  extraMetadata: Record<string, unknown> = {}
+) {
+  const activeSession = session.status === "active" ? session : store.updateSessionStatus(session.id, "active") ?? session;
+  const teacherEvent = store.addEvent({
+    sessionId: activeSession.id,
+    type: "teacher_utterance",
+    actor: "教师",
+    content: teacherText,
+    metadata: {
+      input: inputMode,
+      ...extraMetadata
+    }
+  });
+
+  const allStudents = store.listStudents();
+  const selectedStudents = allStudents.filter((student) => activeSession.selectedStudentIds.includes(student.id));
+  const runtimeStudents = selectedStudents.length ? selectedStudents : allStudents.slice(0, 6);
+  const runtimeStates = store.ensureRuntimeStates(activeSession.id, runtimeStudents);
+  const respondingStudents = selectStudentsForTurn(runtimeStudents, runtimeStates, teacherText, Math.min(4, runtimeStudents.length));
+  const recentEvents = store.listEvents(activeSession.id).slice(-8);
+  const provider = store.getProvider();
+  const startedAt = Date.now();
+  const aiTurn = await generateAiStudentTurn(provider, {
+    session: activeSession,
+    students: respondingStudents,
+    teacherText,
+    runtimeStates,
+    recentEvents
+  });
+  store.addModelCallLog(createModelCallLog({
+    scenario: "student-turn",
+    provider,
+    status: aiTurn.usedModel ? "success" : "fallback",
+    usedModel: aiTurn.usedModel,
+    fallbackReason: aiTurn.fallbackReason,
+    durationMs: Date.now() - startedAt,
+    metadata: {
+      sessionId: activeSession.id,
+      teacherEventId: teacherEvent.id,
+      respondingStudentIds: respondingStudents.map((student) => student.id),
+      inputMode
+    }
+  }));
+
+  const updatedRuntimeStates = applyStudentMessagesToRuntime(runtimeStates, aiTurn.result.messages);
+  updatedRuntimeStates.forEach((state) => store.upsertRuntimeState(state));
+  const stateEvents = buildRuntimeStateEvents(runtimeStates, updatedRuntimeStates, runtimeStudents).map((event) => store.addEvent(event));
+  const savedEvents = buildTurnEvents(activeSession.id, aiTurn.result, aiTurn.usedModel, updatedRuntimeStates, aiTurn.fallbackReason).map((event) => store.addEvent(event));
+  const allEvents = store.listEvents(activeSession.id);
+  const metrics = calculateMetrics(allEvents, runtimeStudents);
+  const metricEvent = store.addEvent({
+    sessionId: activeSession.id,
+    type: "classroom_metric",
+    actor: "课堂脉搏",
+    content: `注意力 ${metrics.attention}，困惑度 ${metrics.confusion}，互动度 ${metrics.interaction}`,
+    metadata: { ...metrics }
+  });
+
+  return {
+    teacherEvent,
+    responses: savedEvents,
+    stateEvents,
+    metricEvent,
+    metrics,
+    runtimeStates: updatedRuntimeStates,
+    usedModel: aiTurn.usedModel,
+    fallbackReason: aiTurn.fallbackReason ?? ""
   };
 }
 
@@ -50,7 +142,8 @@ app.get("/api/dashboard", (_req, res) => {
     courses: store.listCourses(),
     students: store.listStudents(),
     sessions: store.listSessions(),
-    reports: store.listReports()
+    reports: store.listReports(),
+    lessonPlans: store.listLessonPlans()
   });
 });
 
@@ -78,6 +171,108 @@ app.delete("/api/courses/:id", (req, res) => {
     return;
   }
   res.json({ ok: true });
+});
+
+app.get("/api/courses/:id/lesson-plan", (req, res) => {
+  const lessonPlan = store.getLessonPlan(req.params.id);
+  if (!lessonPlan) {
+    res.status(404).json({ message: "未找到该课程的备课脚本。" });
+    return;
+  }
+  res.json(lessonPlan);
+});
+
+app.post("/api/lesson-plans/generate", async (req, res) => {
+  const body = req.body as Partial<GenerateLessonPlanPayload>;
+  const subject = requireString(body.subject);
+  const grade = requireString(body.grade);
+  const topic = requireString(body.topic);
+  const durationMinutes = Number(body.durationMinutes || 10);
+
+  if (!subject) {
+    res.status(400).json({ message: "请填写学科。" });
+    return;
+  }
+  if (!grade) {
+    res.status(400).json({ message: "请填写年级。" });
+    return;
+  }
+  if (!topic) {
+    res.status(400).json({ message: "请填写试讲主题。" });
+    return;
+  }
+  if (!Number.isFinite(durationMinutes) || durationMinutes < 5 || durationMinutes > 45) {
+    res.status(400).json({ message: "试讲时长需在 5 到 45 分钟之间。" });
+    return;
+  }
+
+  const input: GenerateLessonPlanPayload = {
+    title: requireString(body.title),
+    planningMode: body.planningMode === "textbook" ? "textbook" : "free-topic",
+    textbookVersion: requireString(body.textbookVersion),
+    volume: requireString(body.volume),
+    unit: requireString(body.unit),
+    lesson: requireString(body.lesson),
+    period: requireString(body.period),
+    subject,
+    grade,
+    topic,
+    objectives: requireString(body.objectives, `围绕“${topic}”完成一次微格试讲训练。`),
+    durationMinutes,
+    processEvaluation: body.processEvaluation && typeof body.processEvaluation === "object"
+      ? {
+        focus: requireString(body.processEvaluation.focus),
+        method: requireString(body.processEvaluation.method),
+        peerReviewPrompt: requireString(body.processEvaluation.peerReviewPrompt),
+        evidenceTypes: Array.isArray(body.processEvaluation.evidenceTypes)
+          ? body.processEvaluation.evidenceTypes.map((item) => String(item).trim()).filter(Boolean)
+          : []
+      }
+      : undefined
+  };
+
+  const students = store.listStudents();
+  const provider = store.getProvider();
+  const startedAt = Date.now();
+  const { usedModel, planDraft, fallbackReason } = await generateLessonPlan(provider, input, students);
+  store.addModelCallLog(createModelCallLog({
+    scenario: "lesson-plan",
+    provider,
+    status: usedModel ? "success" : "fallback",
+    usedModel,
+    fallbackReason,
+    durationMs: Date.now() - startedAt,
+    metadata: {
+      topic,
+      planningMode: input.planningMode
+    }
+  }));
+  const course = store.createCourse({
+    title: input.title || planDraft.title,
+    subject,
+    grade,
+    topic,
+    objectives: planDraft.objectives.join("；"),
+    durationMinutes
+  });
+  const lessonPlan = store.saveLessonPlan({
+    ...planDraft,
+    courseId: course.id
+  });
+  const recommendedStudents = students.filter((student) => lessonPlan.recommendedStudentIds.includes(student.id));
+
+  res.status(201).json({
+    course,
+    lessonPlan,
+    recommendedStudents,
+    usedModel,
+    fallbackReason: fallbackReason ?? ""
+  });
+});
+
+app.get("/api/model-calls", (req, res) => {
+  const limit = Number(req.query.limit ?? 50);
+  res.json(store.listModelCallLogs(limit).map(sanitizeModelCallLog));
 });
 
 app.get("/api/students", (_req, res) => {
@@ -117,7 +312,8 @@ app.get("/api/sessions/:id", (req, res) => {
     session,
     events: store.listEvents(session.id),
     runtimeStates: store.ensureRuntimeStates(session.id, students),
-    report: store.getReport(session.id)
+    report: store.getReport(session.id),
+    trainingTarget: store.getTrainingTargetBySession(session.id)
   });
 });
 
@@ -144,6 +340,35 @@ app.delete("/api/sessions/:id", (req, res) => {
   res.json({ ok: true });
 });
 
+app.delete("/api/reports/:id", (req, res) => {
+  const deleted = store.deleteReport(req.params.id);
+  if (!deleted) {
+    res.status(404).json({ message: "Report not found" });
+    return;
+  }
+  res.json({ ok: true });
+});
+
+app.get("/api/reports/:reportId/evidence/:evidenceId/context", (req, res) => {
+  const radius = Number(req.query.radius ?? 2);
+  const context = store.getReportEvidenceContext(req.params.reportId, req.params.evidenceId, radius);
+  if (!context) {
+    res.status(404).json({ message: "Evidence context not found" });
+    return;
+  }
+  res.json(context);
+});
+
+app.post("/api/reports/:reportId/training-targets", (req, res) => {
+  const recommendationTitle = requireString(req.body?.recommendationTitle);
+  const result = store.createTrainingTargetFromRecommendation(req.params.reportId, recommendationTitle);
+  if (!result) {
+    res.status(404).json({ message: "Training target source not found" });
+    return;
+  }
+  res.status(201).json(result);
+});
+
 app.post("/api/sessions/:id/start", (req, res) => {
   const session = store.updateSessionStatus(req.params.id, "active");
   if (!session) {
@@ -165,55 +390,111 @@ app.post("/api/sessions/:id/turn", async (req, res) => {
     return;
   }
 
-  const activeSession = session.status === "active" ? session : store.updateSessionStatus(session.id, "active") ?? session;
-  const teacherEvent = store.addEvent({
-    sessionId: activeSession.id,
-    type: "teacher_utterance",
-    actor: "教师",
-    content: teacherText,
-    metadata: {
-      input: req.body?.inputMode === "speech" ? "speech" : "manual"
-    }
-  });
+  res.json(await runTeacherTurn(session, teacherText, req.body?.inputMode === "speech" ? "speech" : "manual"));
+});
 
-  const allStudents = store.listStudents();
-  const selectedStudents = allStudents.filter((student) => activeSession.selectedStudentIds.includes(student.id));
-  const runtimeStudents = selectedStudents.length ? selectedStudents : allStudents.slice(0, 6);
-  const runtimeStates = store.ensureRuntimeStates(activeSession.id, runtimeStudents);
-  const respondingStudents = selectStudentsForTurn(runtimeStudents, runtimeStates, teacherText, Math.min(4, runtimeStudents.length));
-  const recentEvents = store.listEvents(activeSession.id).slice(-8);
-  const provider = store.getProvider();
-  const aiTurn = await generateAiStudentTurn(provider, {
-    session: activeSession,
-    students: respondingStudents,
-    teacherText,
-    runtimeStates,
-    recentEvents
-  });
+app.post("/api/sessions/:id/transcripts", async (req, res) => {
+  const session = store.getSession(req.params.id);
+  if (!session) {
+    res.status(404).json({ message: "Session not found" });
+    return;
+  }
 
-  const updatedRuntimeStates = applyStudentMessagesToRuntime(runtimeStates, aiTurn.result.messages);
-  updatedRuntimeStates.forEach((state) => store.upsertRuntimeState(state));
-  const stateEvents = buildRuntimeStateEvents(runtimeStates, updatedRuntimeStates, runtimeStudents).map((event) => store.addEvent(event));
-  const savedEvents = buildTurnEvents(activeSession.id, aiTurn.result, aiTurn.usedModel, updatedRuntimeStates).map((event) => store.addEvent(event));
-  const allEvents = store.listEvents(activeSession.id);
-  const metrics = calculateMetrics(allEvents, runtimeStudents);
-  const metricEvent = store.addEvent({
-    sessionId: activeSession.id,
-    type: "classroom_metric",
-    actor: "课堂脉搏",
-    content: `注意力 ${metrics.attention}，困惑度 ${metrics.confusion}，互动度 ${metrics.interaction}`,
-    metadata: { ...metrics }
-  });
+  const body = req.body as Partial<TranscriptTurnPayload>;
+  if (!Array.isArray(body.segments) || body.segments.length === 0) {
+    res.status(400).json({ message: "请提供至少一个转写片段。" });
+    return;
+  }
 
-  res.json({
-    teacherEvent,
-    responses: savedEvents,
-    stateEvents,
-    metricEvent,
-    metrics,
-    runtimeStates: updatedRuntimeStates,
-    usedModel: aiTurn.usedModel
-  });
+  try {
+    const normalizedSegments = body.segments.map((segment) => normalizeTranscriptSegment({
+      ...segment,
+      sessionId: session.id
+    }));
+    const existingTranscriptEvents = store
+      .listEvents(session.id)
+      .filter((event) => event.type === "transcript_segment");
+    const existingByTranscriptId = new Map<string, typeof existingTranscriptEvents[number]>();
+    existingTranscriptEvents.forEach((event) => {
+      const transcriptId = String(event.metadata.transcriptId ?? "");
+      if (transcriptId) {
+        existingByTranscriptId.set(transcriptId, event);
+      }
+    });
+    const transcriptEvents = normalizedSegments.map((segment) => {
+      const existing = existingByTranscriptId.get(String(segment.id ?? ""));
+      if (existing) return existing;
+      return store.addEvent(createTranscriptEvent(session.id, segment));
+    });
+    const mergedText = mergeTranscriptSegments(normalizedSegments);
+    const turnResult = body.sendAsTurn && mergedText
+      ? await runTeacherTurn(session, mergedText, "speech", {
+        transcriptEventIds: transcriptEvents.map((event) => event.id)
+      })
+      : undefined;
+
+    res.status(201).json({
+      transcriptEvents,
+      turnResult
+    });
+  } catch (error) {
+    res.status(400).json({ message: error instanceof Error ? error.message : "保存转写失败。" });
+  }
+});
+
+app.post("/api/sessions/:id/observations", (req, res) => {
+  const session = store.getSession(req.params.id);
+  if (!session) {
+    res.status(404).json({ message: "Session not found" });
+    return;
+  }
+  if (session.status !== "active") {
+    res.status(409).json({ message: "仅进行中的实训可记录教师观察。" });
+    return;
+  }
+
+  try {
+    const drafts = buildTeacherObservationEvents(session.id, req.body);
+    const observationEvent = store.addEvent(drafts.observationEvent);
+    const suggestionEvent = drafts.suggestionEvent ? store.addEvent(drafts.suggestionEvent) : undefined;
+    res.status(201).json({
+      observationEvent,
+      suggestionEvent
+    });
+  } catch (error) {
+    res.status(400).json({ message: error instanceof Error ? error.message : "保存教师观察失败。" });
+  }
+});
+
+app.post("/api/sessions/:id/process-evidence", (req, res) => {
+  const currentSession = store.getSession(req.params.id);
+  if (!currentSession) {
+    res.status(404).json({ message: "Session not found" });
+    return;
+  }
+  if (currentSession.status === "completed") {
+    res.status(409).json({ message: "已完成的实训不能继续记录过程评价证据。" });
+    return;
+  }
+
+  const session = currentSession.status === "active"
+    ? currentSession
+    : store.updateSessionStatus(currentSession.id, "active") ?? currentSession;
+  const students = store.listStudents().filter((student) => session.selectedStudentIds.includes(student.id));
+  const lessonPlan = store.getLessonPlan(session.courseId);
+
+  try {
+    const eventDraft = buildProcessEvaluationEvent(
+      session,
+      req.body as Partial<RecordProcessEvidencePayload>,
+      students,
+      lessonPlan
+    );
+    const event = store.addEvent(eventDraft);
+    res.status(201).json({ event });
+  } catch (error) {
+    res.status(400).json({ message: error instanceof Error ? error.message : "保存过程评价证据失败。" });
+  }
 });
 
 app.post("/api/sessions/:id/tick", (req, res) => {
@@ -233,16 +514,45 @@ app.post("/api/sessions/:id/tick", (req, res) => {
   });
 });
 
-app.post("/api/sessions/:id/complete", (req, res) => {
-  const session = store.updateSessionStatus(req.params.id, "completed");
-  if (!session) {
+app.post("/api/sessions/:id/complete", async (req, res) => {
+  const currentSession = store.getSession(req.params.id);
+  if (!currentSession) {
     res.status(404).json({ message: "Session not found" });
     return;
   }
+  if (currentSession.status === "completed") {
+    res.status(409).json({ message: "该实训已完成，不能重复生成报告。" });
+    return;
+  }
+  const session = store.updateSessionStatus(req.params.id, "completed") ?? currentSession;
   const students = store.listStudents().filter((student) => session.selectedStudentIds.includes(student.id));
   const events = store.listEvents(session.id);
-  const report = store.saveReport(createReport(session, events, students));
-  res.json({ session, report });
+  const lessonPlan = store.getLessonPlan(session.courseId);
+  const provider = store.getProvider();
+  const startedAt = Date.now();
+  const generated = await generateEvaluationReport({
+    provider,
+    session,
+    events,
+    students,
+    lessonPlan
+  });
+  store.addModelCallLog(createModelCallLog({
+    scenario: "report",
+    provider,
+    status: generated.usedModel ? "success" : "fallback",
+    usedModel: generated.usedModel,
+    fallbackReason: generated.fallbackReason,
+    durationMs: Date.now() - startedAt,
+    metadata: {
+      sessionId: session.id,
+      eventCount: events.length,
+      evidenceCount: generated.report.evidence.length
+    }
+  }));
+  const report = store.saveReport(generated.report);
+  createReportEvidenceEvents(report).forEach((event) => store.addEvent(event));
+  res.json({ session, report, trainingTarget: store.getTrainingTargetBySession(session.id) });
 });
 
 app.get("/api/model-provider", (_req, res) => {
@@ -261,7 +571,7 @@ app.post("/api/model-provider", (req, res) => {
     apiKey,
     model: requireString(body.model, current.model),
     temperature: Number(body.temperature ?? current.temperature),
-    enabled: Boolean(body.enabled)
+    enabled: typeof body.enabled === "boolean" ? body.enabled : current.enabled
   });
   res.json({ ...config, apiKey: config.apiKey ? "********" : "" });
 });
@@ -270,7 +580,17 @@ app.post("/api/model-provider/test", async (req, res) => {
   const body = req.body as Partial<UpsertModelProviderPayload>;
   const config = providerConfigFromBody(body);
   const validation = validateProviderConfig(config);
+  const startedAt = Date.now();
   if (!validation.ok) {
+    store.addModelCallLog(createModelCallLog({
+      scenario: "provider-test",
+      provider: config,
+      status: "error",
+      usedModel: false,
+      fallbackReason: validation.message,
+      durationMs: Date.now() - startedAt,
+      metadata: { testType: "connection" }
+    }));
     res.json({ ok: false, message: validation.message });
     return;
   }
@@ -281,11 +601,29 @@ app.post("/api/model-provider/test", async (req, res) => {
         { role: "system", content: "你是模型连接测试助手，只用中文简短回复。" },
         { role: "user", content: "请回复：模型连接正常。" }
       ],
-      { maxTokens: 24 }
+      { maxTokens: 24, timeoutMs: 20000 }
     );
+    store.addModelCallLog(createModelCallLog({
+      scenario: "provider-test",
+      provider: config,
+      status: "success",
+      usedModel: true,
+      durationMs: Date.now() - startedAt,
+      metadata: { testType: "connection" }
+    }));
     res.json({ ok: true, message: reply || "模型连接正常。" });
   } catch (error) {
-    res.json({ ok: false, message: error instanceof Error ? error.message : "模型连接测试失败。" });
+    const message = error instanceof Error ? error.message : "模型连接测试失败。";
+    store.addModelCallLog(createModelCallLog({
+      scenario: "provider-test",
+      provider: config,
+      status: "error",
+      usedModel: false,
+      fallbackReason: message,
+      durationMs: Date.now() - startedAt,
+      metadata: { testType: "connection" }
+    }));
+    res.json({ ok: false, message });
   }
 });
 
@@ -298,17 +636,48 @@ app.post("/api/model-provider/scenario-test", async (req, res) => {
 
   const config = providerConfigFromBody(req.body as Partial<UpsertModelProviderPayload>);
   const validation = validateProviderConfig(config);
+  const startedAt = Date.now();
   if (!validation.ok) {
+    store.addModelCallLog(createModelCallLog({
+      scenario,
+      provider: config,
+      status: "error",
+      usedModel: false,
+      fallbackReason: validation.message,
+      durationMs: Date.now() - startedAt,
+      metadata: { testType: "scenario" }
+    }));
     res.json({ ok: false, message: validation.message });
     return;
   }
 
   try {
     const prompt = buildProviderScenarioPrompt(scenario);
-    const sample = await callJsonCompletion<Record<string, unknown>>(config, prompt.messages, { maxTokens: prompt.maxTokens });
+    const sample = await callJsonCompletion<Record<string, unknown>>(config, prompt.messages, {
+      maxTokens: prompt.maxTokens,
+      timeoutMs: scenario === "lesson-plan" ? 45000 : 30000
+    });
+    store.addModelCallLog(createModelCallLog({
+      scenario,
+      provider: config,
+      status: "success",
+      usedModel: true,
+      durationMs: Date.now() - startedAt,
+      metadata: { testType: "scenario" }
+    }));
     res.json({ ok: true, message: prompt.successMessage, sample });
   } catch (error) {
-    res.json({ ok: false, message: error instanceof Error ? error.message : "模型场景测试失败。" });
+    const message = error instanceof Error ? error.message : "模型场景测试失败。";
+    store.addModelCallLog(createModelCallLog({
+      scenario,
+      provider: config,
+      status: "error",
+      usedModel: false,
+      fallbackReason: message,
+      durationMs: Date.now() - startedAt,
+      metadata: { testType: "scenario" }
+    }));
+    res.json({ ok: false, message });
   }
 });
 

@@ -1,4 +1,4 @@
-import type { ClassroomEvent, ClassroomMetrics } from "../../shared/types.js";
+import type { ClassroomEvent, ClassroomMetrics, GenerateLessonPlanPayload, StudentAgent } from "../../shared/types.js";
 import type { GenerateStudentContext } from "./provider.js";
 
 export type ProviderScenario = "student-turn" | "lesson-plan" | "report";
@@ -7,6 +7,27 @@ export interface PromptBundle {
   messages: Array<{ role: "system" | "user"; content: string }>;
   maxTokens: number;
   successMessage: string;
+}
+
+function cleanPromptText(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function lessonPlanProcessEvaluationLines(input: GenerateLessonPlanPayload) {
+  const provided = input.processEvaluation;
+  const focus = cleanPromptText(provided?.focus) || "学生能否说清关键依据和思考过程";
+  const method = cleanPromptText(provided?.method) || "教师观察 + 学生自评 + 同伴互评";
+  const peerReviewPrompt = cleanPromptText(provided?.peerReviewPrompt) || "请同桌指出对方是否说清依据，并补充一个改进建议。";
+  const evidenceTypes = provided?.evidenceTypes
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const evidenceTypeText = evidenceTypes?.length ? evidenceTypes.join("、") : "学生复述、追问回应、同伴反馈";
+  return [
+    `过程性评价重点：${focus}`,
+    `过程性评价方式：${method}`,
+    `同伴/自评提示：${peerReviewPrompt}`,
+    `过程证据类型：${evidenceTypeText}`
+  ];
 }
 
 export function buildStudentTurnPrompt(context: GenerateStudentContext): PromptBundle {
@@ -67,15 +88,31 @@ export function buildStudentTurnPrompt(context: GenerateStudentContext): PromptB
   };
 }
 
-export function buildLessonPlanPrompt(input: {
-  subject: string;
-  grade: string;
-  topic: string;
-  objectives: string;
-  durationMinutes: number;
-}): PromptBundle {
+export function buildLessonPlanPrompt(input: GenerateLessonPlanPayload, students: StudentAgent[] = []): PromptBundle {
+  const studentProfiles = students.slice(0, 12).map((student) => ({
+    id: student.id,
+    name: student.name,
+    avatar: student.avatar,
+    personality: student.personality,
+    foundation: student.foundation,
+    attention: student.attention,
+    comprehension: student.comprehension,
+    participation: student.participation,
+    behaviorStyle: student.behaviorStyle,
+    status: student.status
+  }));
+  const planningMode = input.planningMode === "textbook" ? "教材课时备课" : "自由主题微格备课";
+  const textbookFields = [
+    input.textbookVersion ? `教材版本：${input.textbookVersion}` : "",
+    input.volume ? `册次：${input.volume}` : "",
+    input.unit ? `单元：${input.unit}` : "",
+    input.lesson ? `课题：${input.lesson}` : "",
+    input.period ? `课时：${input.period}` : ""
+  ].filter(Boolean);
+  const processEvaluation = lessonPlanProcessEvaluationLines(input);
+
   return {
-    maxTokens: 900,
+    maxTokens: 2400,
     successMessage: "备课方案 JSON 生成正常。",
     messages: [
       {
@@ -87,12 +124,24 @@ export function buildLessonPlanPrompt(input: {
         content: [
           "请生成一份可直接用于微格试讲的备课方案。",
           "输出 JSON 格式必须严格符合：",
-          '{"title":"...","objectives":["..."],"stages":[{"name":"导入","minutes":2,"teacherAction":"...","studentExpected":"..."}],"interactionRisks":["..."],"recommendedStudentAgents":["..."]}',
+          '{"title":"...","overview":"...","objectives":["..."],"processEvaluation":{"focus":"...","method":"...","peerReviewPrompt":"...","evidenceTypes":["学生复述","追问回应","同伴反馈"]},"stages":[{"type":"导入","name":"...","minutes":2,"teachingMethod":"情境导入法","teacherAction":"一句概括教师动作","actionScript":"可直接照着上课的具体题目、课堂话术、板书、追问和学生操作","expectedStudentResponse":"...","strategyTip":"...","processEvaluationPoint":"本阶段要采集的过程性评价证据"}],"incidents":[{"type":"听不懂","trigger":"...","studentRole":"...","teacherStrategy":"..."}],"recommendedStudentIds":["..."]}',
+          "stages 必须依次覆盖：导入、讲解、提问、练习、总结。incidents 必须覆盖听不懂、抢答、质疑、沉默、跑题中的至少四类。",
+          "每个 stage 必须写出具体的 teachingMethod，例如情境导入法、支架式讲解、问题链教学、即时诊断与变式练习、归纳建构法。",
+          "每个 stage 必须写 actionScript：包含具体题目或材料、教师可说出口的课堂话术、板书内容、追问句或学生操作。",
+          "每个 stage 必须写 processEvaluationPoint：说明本阶段如何观察学生复述、追问回应、同伴互评或自评证据。",
+          "processEvaluation 必须包含过程性评价设计，覆盖评价重点、评价方式、同伴互评/自评提示和证据类型。",
+          "禁止只写空泛表述，例如“贴近生活”“引导学生”“围绕目标”“拆解关键步骤”。如果是数学主题，actionScript 必须尽量包含数字、变量、方程或可计算条件。",
+          "标题、overview、每个 teacherAction 和 actionScript 必须严格围绕给定主题，不得改写成其他知识点或其他课题。",
+          "recommendedStudentIds 必须从给定学生画像里选择，优先组成差异化课堂。",
+          `备课模式：${planningMode}`,
+          ...textbookFields,
           `学科：${input.subject}`,
           `年级：${input.grade}`,
           `主题：${input.topic}`,
           `目标：${input.objectives}`,
-          `时长：${input.durationMinutes} 分钟`
+          `时长：${input.durationMinutes} 分钟`,
+          ...processEvaluation,
+          `可选学生画像：${JSON.stringify(studentProfiles)}`
         ].join("\n")
       }
     ]
