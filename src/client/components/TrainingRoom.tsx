@@ -176,6 +176,31 @@ function cameraFailureMessage(reason?: CameraFailureReason) {
   }
 }
 
+function focusMetricLabel(metric: string) {
+  switch (metric) {
+    case "clarity":
+      return "讲解清晰度";
+    case "questioning":
+      return "提问质量";
+    case "confusion":
+      return "困惑度";
+    case "engagement":
+      return "参与度";
+    case "interaction":
+      return "互动度";
+    case "attention":
+      return "注意力";
+    case "systemSuggestions":
+      return "即时建议";
+    case "teacherObservation.frontFacingRate":
+      return "正对镜头率";
+    case "teacherObservation.averageStability":
+      return "镜头稳定度";
+    default:
+      return metric;
+  }
+}
+
 export function TrainingRoom({
   session,
   students,
@@ -491,6 +516,8 @@ export function TrainingRoom({
             <div className="training-target-banner">
               <span>{trainingTarget.status === "completed" ? "复训已完成" : "复训目标"}</span>
               <strong>{trainingTarget.recommendationTitle}</strong>
+              <em>{trainingTarget.template.title}</em>
+              <small>{trainingTarget.template.scenario}</small>
               <small>{trainingTarget.recommendationDetail}</small>
             </div>
           ) : null}
@@ -715,6 +742,37 @@ export function TrainingRoom({
                 <div className="training-target-focus">
                   <strong>{trainingTarget.status === "completed" ? "复训结果已归档" : "本次复训"}</strong>
                   <span>{trainingTarget.action}</span>
+                  <div className="training-target-template">
+                    <div className="training-target-template__steps">
+                      <b>复训任务清单</b>
+                      <ol>
+                        {trainingTarget.template.steps.map((step, index) => (
+                          <li key={`${trainingTarget.id}-step-${index}`}>{step}</li>
+                        ))}
+                      </ol>
+                    </div>
+                    <div className="training-target-template__criteria">
+                      <b>成功标准</b>
+                      <ul>
+                        {trainingTarget.template.successCriteria.map((criterion, index) => (
+                          <li key={`${trainingTarget.id}-criterion-${index}`}>{criterion}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="training-target-template__evidence">
+                      <b>证据提示</b>
+                      <ul>
+                        {trainingTarget.template.evidencePrompts.map((prompt, index) => (
+                          <li key={`${trainingTarget.id}-prompt-${index}`}>{prompt}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="training-target-template__metrics">
+                      {trainingTarget.template.focusMetrics.map((metric) => (
+                        <span key={metric}>{focusMetricLabel(metric)}</span>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               ) : null}
               <p>{latestSuggestion}</p>

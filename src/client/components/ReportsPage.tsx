@@ -285,7 +285,7 @@ export function ReportsPage({ reports, sessions, onDeleteReport, onCreateTrainin
                       <span><strong>证据类型</strong>{report.processEvaluation.evidenceTypes.join("、")}</span>
                     </div>
                     <div className="report-process-evaluation__stage-points">
-                      {report.processEvaluation.stagePoints.map((item) => <span key={item}>{item}</span>)}
+                      {report.processEvaluation.stagePoints.map((item, index) => <span key={`${report.id}-stage-point-${index}`}>{item}</span>)}
                     </div>
                     <div className="report-process-evaluation__evidence">
                       <strong>关联证据：</strong>
@@ -316,8 +316,8 @@ export function ReportsPage({ reports, sessions, onDeleteReport, onCreateTrainin
                       <Sparkles size={18} />
                       <h3>证据绑定改进建议</h3>
                     </div>
-                    {report.recommendations.map((item) => (
-                      <div className={`report-recommendation-card report-recommendation-card--${item.priority}`} key={item.title}>
+                    {report.recommendations.map((item, index) => (
+                      <div className={`report-recommendation-card report-recommendation-card--${item.priority}`} key={`${report.id}-recommendation-${index}`}>
                         <div>
                           <strong>{item.title}</strong>
                           <span>{priorityLabel(item.priority)}</span>
@@ -357,8 +357,8 @@ export function ReportsPage({ reports, sessions, onDeleteReport, onCreateTrainin
                         </tr>
                       </thead>
                       <tbody>
-                        {report.keyTimeline.map((item) => (
-                          <tr key={`${item.evidenceEventId}-${item.time}`}>
+                        {report.keyTimeline.map((item, index) => (
+                          <tr key={`${report.id}-timeline-${index}`}>
                             <td>{item.time}</td>
                             <td>{item.title}</td>
                             <td>{item.description}</td>
@@ -373,16 +373,16 @@ export function ReportsPage({ reports, sessions, onDeleteReport, onCreateTrainin
                 <div className="report-columns">
                   <div>
                     <h3>亮点</h3>
-                    {report.strengths.map((item) => <span key={item}>{item}</span>)}
+                    {report.strengths.map((item, index) => <span key={`${report.id}-strength-${index}`}>{item}</span>)}
                   </div>
                   <div>
                     <h3>改进</h3>
-                    {report.improvements.map((item) => <span key={item}>{item}</span>)}
+                    {report.improvements.map((item, index) => <span key={`${report.id}-improvement-${index}`}>{item}</span>)}
                   </div>
                 </div>
                 <div className="key-moments">
                   <h3>关键节点</h3>
-                  {report.keyMoments.map((item) => <span key={item}>{item}</span>)}
+                  {report.keyMoments.map((item, index) => <span key={`${report.id}-moment-${index}`}>{item}</span>)}
                 </div>
 
                 <div className="report-evidence-list">

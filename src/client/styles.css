@@ -975,6 +975,13 @@ meter::-webkit-meter-optimum-value {
   color: #f6fffe;
 }
 
+.training-target-banner em {
+  color: #dff7f3;
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 800;
+}
+
 .training-target-banner small {
   color: #b8d8dd;
   line-height: 1.5;
@@ -1830,6 +1837,59 @@ meter::-webkit-meter-optimum-value {
 .training-target-focus span {
   color: #dcecef;
   line-height: 1.55;
+}
+
+.training-target-template {
+  display: grid;
+  gap: 10px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(159, 199, 209, 0.16);
+}
+
+.training-target-template__steps,
+.training-target-template__criteria,
+.training-target-template__evidence {
+  display: grid;
+  gap: 5px;
+}
+
+.training-target-template b {
+  color: #f1fbfa;
+  font-size: 12px;
+  letter-spacing: 0;
+}
+
+.training-target-template ol,
+.training-target-template ul {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.training-target-template li {
+  color: #c8dde2;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.training-target-template__metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.training-target-template__metrics span {
+  min-height: 24px;
+  padding: 4px 8px;
+  border: 1px solid rgba(98, 225, 212, 0.22);
+  border-radius: 999px;
+  background: rgba(98, 225, 212, 0.08);
+  color: #aeeae4;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.25;
 }
 
 .teacher-feedback-stack .pulse-panel,

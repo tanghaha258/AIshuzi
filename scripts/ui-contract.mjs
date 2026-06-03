@@ -44,6 +44,11 @@ const requiredTrainingRoomSelectors = [
   ".camera-diagnostic",
   ".training-target-banner",
   ".training-target-focus",
+  ".training-target-template",
+  ".training-target-template__steps",
+  ".training-target-template__criteria",
+  ".training-target-template__evidence",
+  ".training-target-template__metrics",
   ".process-evidence-panel",
   ".process-evidence-type-grid",
   ".process-evidence-student-select",
@@ -261,6 +266,26 @@ const layoutAssertions = [
       && /setObservationSaveState\("saving"\)/.test(trainingRoomSource)
       && /setObservationSaveState\("saved"\)/.test(trainingRoomSource)
       && /setObservationSaveState\("error"\)/.test(trainingRoomSource)
+  },
+  {
+    name: "training room renders retraining template details",
+    ok: /trainingTarget\.template/.test(trainingRoomSource)
+      && /training-target-template/.test(trainingRoomSource)
+      && /successCriteria/.test(trainingRoomSource)
+      && /evidencePrompts/.test(trainingRoomSource)
+      && /focusMetrics/.test(trainingRoomSource)
+      && /steps\.map\(\(step, index\)/.test(trainingRoomSource)
+      && /successCriteria\.map\(\(criterion, index\)/.test(trainingRoomSource)
+      && /evidencePrompts\.map\(\(prompt, index\)/.test(trainingRoomSource)
+  },
+  {
+    name: "reports page avoids duplicate text-only keys in repeated summary lists",
+    ok: /stagePoints\.map\(\(item, index\)/.test(reportsPageSource)
+      && /recommendations\.map\(\(item, index\)/.test(reportsPageSource)
+      && /keyTimeline\.map\(\(item, index\)/.test(reportsPageSource)
+      && /strengths\.map\(\(item, index\)/.test(reportsPageSource)
+      && /improvements\.map\(\(item, index\)/.test(reportsPageSource)
+      && /keyMoments\.map\(\(item, index\)/.test(reportsPageSource)
   },
   {
     name: "reports page renders teacher camera observation section",

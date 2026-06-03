@@ -5,6 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import type {
   ClassroomEvent,
   Course,
+  EvidenceBoundRecommendation,
   EvaluationReport,
   LessonPlan,
   LessonPlanStage,
@@ -15,6 +16,8 @@ import type {
   StudentAgent,
   StudentRuntimeState,
   TrainingTarget,
+  TrainingTargetTemplate,
+  TrainingTargetTemplateType,
   TrainingSession
 } from "../shared/types.js";
 import { createDeepSeekDefaultProvider, isLegacyOpenAiDefaultProvider } from "../shared/providerDefaults.js";
@@ -39,6 +42,172 @@ function json<T>(value: string | null | undefined, fallback: T): T {
     return JSON.parse(value) as T;
   } catch {
     return fallback;
+  }
+}
+
+const trainingTargetTemplateTypes: TrainingTargetTemplateType[] = [
+  "concept-check",
+  "strategy-follow-up",
+  "participation-recovery",
+  "camera-presence"
+];
+
+function isTrainingTargetTemplateType(value: unknown): value is TrainingTargetTemplateType {
+  return typeof value === "string" && trainingTargetTemplateTypes.includes(value as TrainingTargetTemplateType);
+}
+
+function stringList(value: unknown, fallback: string[]): string[] {
+  if (!Array.isArray(value)) return fallback;
+  const items = value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+  return items.length ? items : fallback;
+}
+
+function fallbackTrainingTargetTemplate(recommendationTitle: string, recommendationDetail: string, action: string): TrainingTargetTemplate {
+  return {
+    type: "concept-check",
+    title: "复训：关键概念小步确认",
+    scenario: `围绕“${recommendationTitle || "课后建议"}”进行一次短轮复训。${recommendationDetail || ""}`,
+    steps: [
+      action || "讲完一个关键步骤后停顿 3 秒，请一名学生复述设量和等量关系。",
+      "把学生复述中缺失的词补成一句完整判断，再进入下一步。",
+      "用一个封闭式小问题确认全班是否跟上。"
+    ],
+    successCriteria: [
+      "学生能复述设量、等量关系和理由，教师再进入下一步。",
+      "教师至少完成一次确认性追问。",
+      "复训结束时保留一条可回看的学生证据。"
+    ],
+    evidencePrompts: [
+      "记录一条学生复述证据，说明他是否说清关键步骤。",
+      "记录一次教师追问后的学生回应变化。"
+    ],
+    focusMetrics: ["clarity", "questioning", "confusion"]
+  };
+}
+
+function normalizeTrainingTargetTemplate(value: string | null | undefined, fallback: TrainingTargetTemplate): TrainingTargetTemplate {
+  const parsed = json<Partial<TrainingTargetTemplate>>(value, {});
+  return {
+    type: isTrainingTargetTemplateType(parsed.type) ? parsed.type : fallback.type,
+    title: typeof parsed.title === "string" && parsed.title.trim() ? parsed.title : fallback.title,
+    scenario: typeof parsed.scenario === "string" && parsed.scenario.trim() ? parsed.scenario : fallback.scenario,
+    steps: stringList(parsed.steps, fallback.steps),
+    successCriteria: stringList(parsed.successCriteria, fallback.successCriteria),
+    evidencePrompts: stringList(parsed.evidencePrompts, fallback.evidencePrompts),
+    focusMetrics: stringList(parsed.focusMetrics, fallback.focusMetrics)
+  };
+}
+
+function recommendationHasTeacherObservationEvidence(report: EvaluationReport, recommendation: EvidenceBoundRecommendation) {
+  const eventTypesById = new Map(report.evidence.map((node) => [node.eventId, node.eventType]));
+  return recommendation.evidenceEventIds.some((eventId) => eventTypesById.get(eventId) === "teacher_observation");
+}
+
+function classifyTrainingTargetTemplate(report: EvaluationReport, recommendation: EvidenceBoundRecommendation): TrainingTargetTemplateType {
+  const text = `${recommendation.title} ${recommendation.detail} ${recommendation.action}`;
+  if (/镜头|摄像头|抬头|视线|站位|正对|教师观察/.test(text) || recommendationHasTeacherObservationEvidence(report, recommendation)) {
+    return "camera-presence";
+  }
+  if (/低参与|参与|点名|补充理由|薄弱|内向/.test(text)) {
+    return "participation-recovery";
+  }
+  if (/即时建议|策略|观察点|采纳|系统调控/.test(text)) {
+    return "strategy-follow-up";
+  }
+  return "concept-check";
+}
+
+function createTrainingTargetTemplate(report: EvaluationReport, recommendation: EvidenceBoundRecommendation): TrainingTargetTemplate {
+  const type = classifyTrainingTargetTemplate(report, recommendation);
+  switch (type) {
+    case "camera-presence":
+      return {
+        type,
+        title: "复训：教师镜头交流动作",
+        scenario: `围绕“${recommendation.title}”进行一次镜头观察复训，把摄像头指标转成面向学生的课堂动作。`,
+        steps: [
+          "开始提问前先固定站位，抬头看向学生区，再说出问题。",
+          "学生回应前保持正对镜头和学生区视线，等待 3 秒后点名。",
+          "请一名学生复述关键步骤，再根据回应补充或追问。"
+        ],
+        successCriteria: [
+          "教师提问时保持正对学生区，视线不长时间离开镜头。",
+          "镜头观察摘要中的正对镜头率和稳定度不再成为主要问题。",
+          "至少出现一次学生复述关键步骤的证据。"
+        ],
+        evidencePrompts: [
+          "记录一次提问前教师是否抬头看向学生区。",
+          "记录学生复述后教师是否进行了补充或追问。"
+        ],
+        focusMetrics: [
+          "teacherObservation.frontFacingRate",
+          "teacherObservation.averageStability",
+          "questioning"
+        ]
+      };
+    case "participation-recovery":
+      return {
+        type,
+        title: "复训：低参与学生可完成任务",
+        scenario: `围绕“${recommendation.title}”进行一次参与度复训，把发言任务切成学生能完成的小步。`,
+        steps: [
+          "先点名低参与学生回答一个只需一步判断的问题。",
+          "请积极学生补充理由，但不替代低参与学生的原始表达。",
+          "把两名学生的答案合成一句完整结论，再回到全班。"
+        ],
+        successCriteria: [
+          "低参与学生至少完成一次短回应。",
+          "教师给出等待时间后再请同伴补充。",
+          "学生回应后形成一条可进入报告的过程证据。"
+        ],
+        evidencePrompts: [
+          "记录低参与学生完成了哪一个小步。",
+          "记录同伴补充是否帮助原学生修正理解。"
+        ],
+        focusMetrics: ["engagement", "interaction", "attention"]
+      };
+    case "strategy-follow-up":
+      return {
+        type,
+        title: "复训：即时策略采纳追踪",
+        scenario: `围绕“${recommendation.title}”进行一次策略采纳复训，把系统建议转成可观察动作。`,
+        steps: [
+          "选择一条即时建议，先说出将要采纳的教师动作。",
+          "执行动作后观察学生注意、提问或回应是否变化。",
+          "用一句话标记这条策略是否有效，并决定是否继续使用。"
+        ],
+        successCriteria: [
+          "教师至少明确采纳一条即时建议。",
+          "采纳后出现学生回应、提问或状态变化证据。",
+          "复训报告能追踪策略动作和学生结果之间的关系。"
+        ],
+        evidencePrompts: [
+          "记录教师采纳了哪一条即时建议。",
+          "记录采纳后的第一个学生反应。"
+        ],
+        focusMetrics: ["interaction", "engagement", "systemSuggestions"]
+      };
+    default:
+      return {
+        type,
+        title: "复训：关键概念小步确认",
+        scenario: `围绕“${recommendation.title}”进行一次关键概念复训，把讲解拆成可验证的小步。`,
+        steps: [
+          "讲完一个关键步骤后停顿 3 秒，请一名学生复述设量和等量关系。",
+          "针对学生复述中缺失的部分，用一句追问补齐理由。",
+          "再请另一名学生用生活例子确认同一个关系。"
+        ],
+        successCriteria: [
+          "学生能复述关键步骤，并说清设量和等量关系。",
+          "教师至少完成一次确认性追问后再进入下一步。",
+          "困惑学生能用生活例子重新解释核心概念。"
+        ],
+        evidencePrompts: [
+          "记录一条学生复述证据，说明他是否说清关键步骤。",
+          "记录一次追问后的学生修正或补充。"
+        ],
+        focusMetrics: ["clarity", "questioning", "confusion"]
+      };
   }
 }
 
@@ -130,6 +299,7 @@ function rowToReport(row: Record<string, unknown>): EvaluationReport {
     studentResponses: json<EvaluationReport["studentResponses"]>(String(row.student_responses ?? "[]"), []),
     teacherStrategyHits: json<EvaluationReport["teacherStrategyHits"]>(String(row.teacher_strategy_hits ?? "[]"), []),
     recommendations: json<EvaluationReport["recommendations"]>(String(row.recommendations ?? "[]"), []),
+    teacherObservation: json<EvaluationReport["teacherObservation"]>(String(row.teacher_observation ?? ""), undefined),
     processEvaluation: json<EvaluationReport["processEvaluation"]>(String(row.process_evaluation ?? ""), undefined),
     exportMarkdown: String(row.export_markdown ?? ""),
     exportHtml: String(row.export_html ?? ""),
@@ -219,16 +389,23 @@ function rowToRuntimeState(row: Record<string, unknown>): StudentRuntimeState {
 }
 
 function rowToTrainingTarget(row: Record<string, unknown>): TrainingTarget {
+  const recommendationTitle = String(row.recommendation_title);
+  const recommendationDetail = String(row.recommendation_detail);
+  const action = String(row.action);
   return {
     id: String(row.id),
     reportId: String(row.report_id),
     sessionId: String(row.session_id),
     sourceSessionId: String(row.source_session_id),
     courseId: String(row.course_id),
-    recommendationTitle: String(row.recommendation_title),
-    recommendationDetail: String(row.recommendation_detail),
-    action: String(row.action),
+    recommendationTitle,
+    recommendationDetail,
+    action,
     evidenceEventIds: json<string[]>(String(row.evidence_event_ids ?? "[]"), []),
+    template: normalizeTrainingTargetTemplate(
+      row.template ? String(row.template) : undefined,
+      fallbackTrainingTargetTemplate(recommendationTitle, recommendationDetail, action)
+    ),
     status: row.status === "completed" ? "completed" : "active",
     createdAt: String(row.created_at)
   };
@@ -674,6 +851,7 @@ export const store = {
     };
 
     const session = this.createSession(course, sourceSession.selectedStudentIds);
+    const template = createTrainingTargetTemplate(report, recommendation);
     const target: TrainingTarget = {
       id: randomUUID(),
       reportId: report.id,
@@ -684,6 +862,7 @@ export const store = {
       recommendationDetail: recommendation.detail,
       action: recommendation.action,
       evidenceEventIds: recommendation.evidenceEventIds,
+      template,
       status: "active",
       createdAt: now()
     };
@@ -691,8 +870,8 @@ export const store = {
       INSERT INTO training_targets (
         id, report_id, session_id, source_session_id, course_id,
         recommendation_title, recommendation_detail, action, evidence_event_ids,
-        status, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        template, status, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       target.id,
       target.reportId,
@@ -703,6 +882,7 @@ export const store = {
       target.recommendationDetail,
       target.action,
       JSON.stringify(target.evidenceEventIds),
+      JSON.stringify(target.template),
       target.status,
       target.createdAt
     );
@@ -819,9 +999,9 @@ export const store = {
       INSERT INTO reports (
         id, session_id, summary, metrics, strengths, improvements, key_moments,
         overview, evidence, key_timeline, student_responses, teacher_strategy_hits,
-        recommendations, process_evaluation, export_markdown, export_html, generated_by, fallback_reason, generated_at
+        recommendations, teacher_observation, process_evaluation, export_markdown, export_html, generated_by, fallback_reason, generated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(session_id) DO UPDATE SET
         id = excluded.id,
         summary = excluded.summary,
@@ -835,6 +1015,7 @@ export const store = {
         student_responses = excluded.student_responses,
         teacher_strategy_hits = excluded.teacher_strategy_hits,
         recommendations = excluded.recommendations,
+        teacher_observation = excluded.teacher_observation,
         process_evaluation = excluded.process_evaluation,
         export_markdown = excluded.export_markdown,
         export_html = excluded.export_html,
@@ -855,6 +1036,7 @@ export const store = {
       JSON.stringify(report.studentResponses),
       JSON.stringify(report.teacherStrategyHits),
       JSON.stringify(report.recommendations),
+      JSON.stringify(report.teacherObservation ?? null),
       JSON.stringify(report.processEvaluation ?? null),
       report.exportMarkdown,
       report.exportHtml,

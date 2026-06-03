@@ -178,6 +178,22 @@ export interface TrainingSession {
 
 export type TrainingTargetStatus = "active" | "completed";
 
+export type TrainingTargetTemplateType =
+  | "concept-check"
+  | "strategy-follow-up"
+  | "participation-recovery"
+  | "camera-presence";
+
+export interface TrainingTargetTemplate {
+  type: TrainingTargetTemplateType;
+  title: string;
+  scenario: string;
+  steps: string[];
+  successCriteria: string[];
+  evidencePrompts: string[];
+  focusMetrics: string[];
+}
+
 export interface TrainingTarget {
   id: string;
   reportId: string;
@@ -188,6 +204,7 @@ export interface TrainingTarget {
   recommendationDetail: string;
   action: string;
   evidenceEventIds: string[];
+  template: TrainingTargetTemplate;
   status: TrainingTargetStatus;
   createdAt: string;
 }
