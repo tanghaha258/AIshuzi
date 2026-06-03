@@ -41,7 +41,7 @@ assert.equal(observation.observationEvent.type, "teacher_observation");
 assert.equal(observation.observationEvent.actor, "教师观察");
 assert.match(observation.observationEvent.content, /教师观察/);
 assert.deepEqual(observation.observationEvent.metadata.observation, normalized);
-assert.equal(observation.suggestionEvent, undefined);
+assert.match(observation.suggestionEvent?.content ?? "", /视线|学生区|偏离镜头/);
 
 const issue = buildTeacherObservationEvents("session-1", {
   source: "fallback",
@@ -55,7 +55,86 @@ const issue = buildTeacherObservationEvents("session-1", {
 
 assert.equal(issue.suggestionEvent?.type, "system_suggestion");
 assert.equal(issue.suggestionEvent?.actor, "系统建议");
-assert.match(issue.suggestionEvent?.content ?? "", /摄像头|画面|稳定/);
+assert.match(issue.suggestionEvent?.content ?? "", /镜头中央|补足光线|观察建议|可靠/);
+assert.doesNotMatch(issue.suggestionEvent?.content ?? "", /抬头|手势|固定站位/);
+
+function suggestionFor(input: typeof validObservation) {
+  return buildTeacherObservationEvents("session-1", input, { now }).suggestionEvent?.content ?? "";
+}
+
+const lowConfidenceAdvice = suggestionFor({
+  ...validObservation,
+  faceVisible: false,
+  faceConfidence: 18,
+  headDirection: "down",
+  expressionActivity: 6,
+  stability: 20
+});
+assert.match(lowConfidenceAdvice, /镜头中央|补足光线|观察建议|可靠/);
+assert.doesNotMatch(lowConfidenceAdvice, /抬头|手势|站位/);
+
+const downAdvice = suggestionFor({
+  ...validObservation,
+  faceConfidence: 82,
+  headDirection: "down",
+  expressionActivity: 50,
+  stability: 74
+});
+assert.match(downAdvice, /抬头|学生区|下一轮提问|复述/);
+
+const downAdviceEvent = buildTeacherObservationEvents("session-1", {
+  ...validObservation,
+  faceConfidence: 82,
+  headDirection: "down",
+  expressionActivity: 50,
+  stability: 74
+}, { now }).suggestionEvent;
+assert.equal(downAdviceEvent?.metadata.source, "teacher_observation");
+assert.equal(downAdviceEvent?.metadata.adviceLabel, "look-up-before-question");
+assert.equal(downAdviceEvent?.metadata.advicePriority, 2);
+assert.deepEqual(downAdviceEvent?.metadata.observation, {
+  ...validObservation,
+  faceConfidence: 82,
+  headDirection: "down",
+  expressionActivity: 50,
+  stability: 74
+});
+
+const sideAdvice = suggestionFor({
+  ...validObservation,
+  faceConfidence: 82,
+  headDirection: "left",
+  expressionActivity: 50,
+  stability: 74
+});
+assert.match(sideAdvice, /视线|学生区|偏离镜头/);
+
+const unstableAdvice = suggestionFor({
+  ...validObservation,
+  faceConfidence: 82,
+  headDirection: "front",
+  expressionActivity: 50,
+  stability: 21
+});
+assert.match(unstableAdvice, /固定站位|设备|继续讲解|数据失真/);
+
+const lowExpressionAdvice = suggestionFor({
+  ...validObservation,
+  faceConfidence: 82,
+  headDirection: "front",
+  expressionActivity: 12,
+  stability: 74
+});
+assert.match(lowExpressionAdvice, /关键概念|停顿|重音|手势/);
+
+const healthyAdvice = suggestionFor({
+  ...validObservation,
+  faceConfidence: 86,
+  headDirection: "front",
+  expressionActivity: 55,
+  stability: 76
+});
+assert.equal(healthyAdvice, "");
 
 assert.throws(
   () => buildTeacherObservationEvents("", normalized, { now }),

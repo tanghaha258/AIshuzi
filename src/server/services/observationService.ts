@@ -142,6 +142,51 @@ function stabilityLabel(value: number) {
   return "画面不够稳定";
 }
 
+interface TeacherObservationAdvice {
+  label: string;
+  priority: number;
+  action: string;
+}
+
+function classifyTeacherObservationAdvice(observation: TeacherObservationPayload): TeacherObservationAdvice | undefined {
+  if (!observation.faceVisible || observation.faceConfidence < 35) {
+    return {
+      label: "observation-reliability",
+      priority: 1,
+      action: "先回到镜头中央并补足光线，后续观察建议才会更可靠。"
+    };
+  }
+  if (observation.headDirection === "down") {
+    return {
+      label: "look-up-before-question",
+      priority: 2,
+      action: "下一轮提问前先抬头看向学生区，再请一名学生复述关键步骤。"
+    };
+  }
+  if (observation.headDirection === "left" || observation.headDirection === "right" || observation.headDirection === "up") {
+    return {
+      label: "return-attention-to-students",
+      priority: 3,
+      action: "讲解时把视线转回学生区，减少长时间偏离镜头。"
+    };
+  }
+  if (observation.stability < 35) {
+    return {
+      label: "stabilize-before-continuing",
+      priority: 4,
+      action: "先固定站位或设备，再继续讲解，避免观察数据失真。"
+    };
+  }
+  if (observation.faceConfidence >= 35 && observation.expressionActivity < 25) {
+    return {
+      label: "emphasize-key-concept",
+      priority: 5,
+      action: "讲到关键概念时加入一次停顿、重音或手势强调。"
+    };
+  }
+  return undefined;
+}
+
 function buildObservationContent(observation: TeacherObservationPayload) {
   const face = observation.faceVisible
     ? `面部可见，置信度 ${observation.faceConfidence}`
@@ -154,18 +199,8 @@ function buildObservationContent(observation: TeacherObservationPayload) {
   ].join("；") + "。";
 }
 
-function buildSuggestionContent(observation: TeacherObservationPayload) {
-  const suggestions: string[] = [];
-  if (!observation.faceVisible || observation.faceConfidence < 35) {
-    suggestions.push("调整摄像头角度或光线，保证面部稳定出现在画面中。");
-  }
-  if (observation.stability < 35) {
-    suggestions.push("保持设备或站位稳定，减少画面晃动。");
-  }
-  if (observation.headDirection === "down" && observation.faceConfidence >= 35) {
-    suggestions.push("适当抬头看向学生区域，增强课堂交流感。");
-  }
-  return suggestions.length ? `建议：${suggestions.join("")}` : "";
+function buildSuggestionContent(advice: TeacherObservationAdvice) {
+  return `建议：${advice.action}`;
 }
 
 export function normalizeTeacherObservation(
@@ -208,7 +243,8 @@ export function buildTeacherObservationEvents(
       localOnly: true
     }
   };
-  const suggestionContent = buildSuggestionContent(observation);
+  const advice = classifyTeacherObservationAdvice(observation);
+  const suggestionContent = advice ? buildSuggestionContent(advice) : "";
   const suggestionEvent: ClassroomEventDraft | undefined = suggestionContent
     ? {
       sessionId: normalizedSessionId,
@@ -217,6 +253,8 @@ export function buildTeacherObservationEvents(
       content: suggestionContent,
       metadata: {
         source: "teacher_observation",
+        adviceLabel: advice?.label,
+        advicePriority: advice?.priority,
         observation
       }
     }

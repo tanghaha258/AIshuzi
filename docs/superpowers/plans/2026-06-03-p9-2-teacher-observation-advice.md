@@ -15,7 +15,7 @@
 **Files:**
 - Modify: `scripts/observation-contract.ts`
 
-- [ ] **Step 1: Replace the old device-first assertion and add advice rule cases**
+- [x] **Step 1: Replace the old device-first assertion and add advice rule cases**
 
 Replace the existing obvious-issue assertion:
 
@@ -94,7 +94,7 @@ const healthyAdvice = suggestionFor({
 assert.equal(healthyAdvice, "");
 ```
 
-- [ ] **Step 2: Run the focused contract and confirm RED**
+- [x] **Step 2: Run the focused contract and confirm RED**
 
 Run: `npm run test:observation`
 
@@ -105,7 +105,7 @@ Expected: FAIL because current suggestion text is device-first, concatenates sev
 **Files:**
 - Modify: `src/server/services/observationService.ts`
 
-- [ ] **Step 1: Add a classifier type and priority function**
+- [x] **Step 1: Add a classifier type and priority function**
 
 Add this near the existing label helpers in `src/server/services/observationService.ts`:
 
@@ -150,7 +150,7 @@ function classifyTeacherObservationAdvice(observation: TeacherObservationPayload
 }
 ```
 
-- [ ] **Step 2: Replace concatenated suggestion text**
+- [x] **Step 2: Replace concatenated suggestion text**
 
 Change `buildSuggestionContent(observation)` to:
 
@@ -161,7 +161,7 @@ function buildSuggestionContent(observation: TeacherObservationPayload) {
 }
 ```
 
-- [ ] **Step 3: Run the focused contract and confirm GREEN**
+- [x] **Step 3: Run the focused contract and confirm GREEN**
 
 Run: `npm run test:observation`
 
@@ -173,7 +173,7 @@ Expected: PASS.
 - Modify: `scripts/observation-contract.ts`
 - Modify: `src/server/services/observationService.ts`
 
-- [ ] **Step 1: Add failing metadata assertions**
+- [x] **Step 1: Add failing metadata assertions**
 
 In `scripts/observation-contract.ts`, after `downAdvice`, add:
 
@@ -197,13 +197,13 @@ assert.deepEqual(downAdviceEvent?.metadata.observation, {
 });
 ```
 
-- [ ] **Step 2: Run the focused contract and confirm RED**
+- [x] **Step 2: Run the focused contract and confirm RED**
 
 Run: `npm run test:observation`
 
 Expected: FAIL because suggestion metadata does not yet include `adviceLabel` or `advicePriority`.
 
-- [ ] **Step 3: Extend classifier and metadata**
+- [x] **Step 3: Extend classifier and metadata**
 
 Change the interface to include priority:
 
@@ -253,7 +253,7 @@ metadata: {
 
 Remove the old observation-accepting `buildSuggestionContent(observation: TeacherObservationPayload)` function signature so the service only classifies once per request.
 
-- [ ] **Step 4: Run the focused contract and confirm GREEN**
+- [x] **Step 4: Run the focused contract and confirm GREEN**
 
 Run: `npm run test:observation`
 
@@ -265,7 +265,7 @@ Expected: PASS.
 - Verify: `package.json`
 - Verify: git state
 
-- [ ] **Step 1: Run focused checks**
+- [x] **Step 1: Run focused checks**
 
 Run:
 
@@ -276,7 +276,7 @@ npm run smoke
 
 Expected: both commands exit 0. Smoke confirms the teacher-observation route still returns a suggestion for an obvious camera issue.
 
-- [ ] **Step 2: Run typecheck and full check**
+- [x] **Step 2: Run typecheck and full check**
 
 Run:
 
